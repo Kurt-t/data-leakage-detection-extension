@@ -1,0 +1,1470 @@
+// ---- type definitions ----
+.type Var <: symbol
+.type Type <: symbol
+.type Field <: symbol
+.type Index <: Var
+.type Invocation <: symbol
+.type Method <: symbol
+.type Value <: symbol
+.type Context = [invo1:Invocation, invo2:Invocation]
+.type HContext = [invo:Invocation]
+
+#define ValueIdMacro(id, type) \
+    cat(cat(cat(id, "::: "), type), "::: ")
+
+#define MakeVarCtx(var, ctx) \
+    cat(cat(cat(cat("(", var), ", "), ctx), ")")
+
+#define MakeCtx(ctx1, ctx2) \
+    cat(cat(cat(cat("[", ctx1), ", "), ctx2), "]")
+
+#define MakePath(ele, path) \
+    cat(cat(cat(cat("[", ele), ", "), path), "]")
+
+// ---- inputs ----
+// inner-procedural facts
+.decl AssignVar(to:Var, from:Var)
+.decl AssignGlobal(to:Var, from:Var)
+.decl AssignStrConstant(to:Var, constant:symbol)
+.decl AssignBoolConstant(to:Var, constant:symbol)
+.decl AssignIntConstant(to:Var, constant:symbol)
+.decl AssignFloatConstant(to:Var, constant:symbol)
+.decl AssignBinOp(to:Var, left:Var, op:symbol, right:Var)
+.decl LoadField(to:Var, base:Var, f:Field)
+.decl StoreField(base:Var, f:Field, from:Var)
+.decl LoadIndex(to:Var, base:Var, i:Index)
+.decl StoreIndex(base:Var, i:Index, from:Var)
+.decl LoadSlice(to:Var, base:Var, st:Var, ed:Var, step:Var)
+.decl StoreSlice(base:Var, st:Var, ed:Var, step:Var, from:Var)
+.decl StoreFieldSSA(new_base:Var, base:Var, f:Field, from:Var)
+.decl StoreIndexSSA(new_base:Var, base:Var, i:Index, from:Var)
+.decl StoreSliceSSA(new_base:Var, base:Var, st:Var, ed:Var, step:Var, from:Var)
+
+// inter-procedural facts
+.decl Invoke(invo:Invocation, toMeth:Method, inMeth:Method)
+.decl ActualParam(index:number, invo:Invocation, var:Var)
+.decl FormalParam(index:number, meth:Method, var:Var)
+.decl ActualKeyParam(keyword:Var, invo:Invocation, var:Var)
+// .decl FormalKeyParam(keyword:Var, meth:Method)
+.decl ActualReturn(index:number, invo:Invocation, var:Var)
+.decl FormalReturn(index:number, meth:Method, var:Var)
+
+.decl VarInMethod(var:Var, meth:Method)
+.decl VarType(var:Var, type:Type)
+.decl SubType(subtype:Type, type:Type)
+.decl Alloc(var:Var, value:Value, inMeth:Method)
+.decl LocalMethod(meth:Method)
+.decl LocalClass(cls:Type)
+.decl InvokeInLoop(invo:Invocation, loop_var:Var)
+.decl NextInvoke(invo1:Invocation, invo2:Invocation)
+
+.input AssignVar
+.input AssignGlobal
+.input AssignStrConstant
+.input AssignBoolConstant
+.input AssignIntConstant
+.input AssignFloatConstant
+.input AssignBinOp
+.input LoadField
+.input StoreField
+.input LoadIndex
+.input StoreIndex
+.input LoadSlice
+.input StoreSlice
+.input StoreIndexSSA
+.input StoreFieldSSA
+.input StoreSliceSSA
+
+.input Invoke
+.input ActualParam
+.input FormalParam
+.input ActualKeyParam
+.input ActualReturn
+.input FormalReturn
+// .input CallGraphEdge
+.input VarInMethod
+.input VarType
+.input SubType
+.input Alloc
+.input LocalMethod
+.input LocalClass
+.input InvokeInLoop
+.input NextInvoke
+
+
+/* -------------------
+Method specifications
+------------------- */
+.decl FilteredMethod(meth:Method)
+.decl PureMethod(meth:Method)
+FilteredMethod(meth) :-
+    meth = "__phi__"; meth = "set_field_wrapper";
+    meth = "set_index_wrapper"; meth = "set_slice_wrapper".
+
+PureMethod(meth) :-
+    meth = "len".
+
+.decl MethodUpdate(index:number, meth:Method)
+MethodUpdate(0, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit|fit_transform|train)", meth).
+MethodUpdate(to, meth) :-
+    ParamToParamFlow(to, from, meth).
+
+.decl MethodSSA(ret_index:number, index:number, meth:Method)
+MethodSSA(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit|fit_generator)", meth).
+
+.decl MethodIndexToKey(index:number, keyword:Var, meth:Method)
+// pandas
+MethodIndexToKey(1, "data", meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](Series|DataFrame|get_dummies|pivot|pivot_table)", meth).
+MethodIndexToKey(1, "x", meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](cut|qcut)", meth).
+MethodIndexToKey(1, "values", meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](facorize|unique)", meth).
+MethodIndexToKey(1, "objs", meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](concat|isna|isnull|notna|notnull)", meth).
+MethodIndexToKey(1, "arg", meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](to_numeric|to_datetime|to_timedelta)", meth).
+MethodIndexToKey(1, "frame", "pandas.melt").
+MethodIndexToKey(1, "df", "pandas.wide_to_long").
+MethodIndexToKey(1, "left", meth),
+MethodIndexToKey(2, "right", meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](merge|merge_ordered|merge_asof)", meth).
+MethodIndexToKey(1, "dataset", meth) :-
+    Invoke(_, meth, _),
+    match(".*DataLoader", meth).
+
+// sklearn & imblearn
+MethodIndexToKey(1, "X", meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit|predict|predict_log_proba|predict_proba|score|fit_sample|fit_resample)", meth).
+MethodIndexToKey(2, "y", meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit|score)", meth).
+
+// keras
+MethodIndexToKey(1, "x", meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit|evaluate|predict|predict_classes|predict_proba|train_on_batch|test_on_batch|predict_on_batch)", meth).
+MethodIndexToKey(1, "generator", meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit_generator|evaluate_generator)", meth).
+
+MethodIndexToKey(8, "validation_data", meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit)", meth).
+MethodIndexToKey(6, "validation_data", meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit_generator)", meth).
+
+ActualParam(fromIdx, invo, from) :-
+    MethodIndexToKey(fromIdx, keyword, meth),
+    ActualKeyParam(keyword, invo, from),
+    Invoke(invo, meth, _).
+
+/* -------------------
+Specified cases for data flow analysis 
+------------------- */
+//  relations
+.decl ParamToParamFlow(to:number, from:number, method:Method) 
+.decl ParamToParamDataFlow(to:number, from:number, method:Method) 
+
+.decl ParamToRetEquivFlow(to:number, from:number, method:Method)
+.decl ParamToRetCondEquivFlow(to:number, from:number, cond_id:number,method:Method)
+.decl ParamContentToRetCondEquivFlow(to:number, from:number, cond_id:number,method:Method)
+
+.decl ParamToRetDataFlow(to:number, from:number, method:Method)
+
+.decl FlowCondition(cond_id:number, keyword:Var, constant:symbol)
+
+// param2param flows
+ParamToParamFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries|GroupBy)[.](fillna)", meth).
+
+ParamToParamFlow(0, 1, meth),
+ParamToParamFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries|GroupBy)[.](clip)", meth).
+
+ParamToParamFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries|GroupBy)[.](mask|where|replace)", meth).
+
+ParamToParamFlow(0, 1, meth),
+ParamToParamDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](append|add)", meth).
+
+ParamToParamFlow(0, 2, meth),
+ParamToParamDataFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](insert)", meth).
+
+ParamToParamFlow(0, 1, meth),
+ParamToParamDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|ndarray)[.](put)", meth).
+
+ParamToParamFlow(1, 2, meth),
+ParamToParamDataFlow(1, 2, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](copyto|fill_diagonal)", meth).
+
+ParamToParamFlow(1, 3, meth),
+ParamToParamDataFlow(1, 3, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](place|put|put_along_axis|putmask)", meth).
+
+
+// specs for arrays and matrices
+ParamToRetEquivFlow(0, 2, "patsy.dmatrix").
+
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*csr_matrix", meth).
+
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](astype|copy|view|toarray|tocsr|todense|to_numpy|to_period|to_timestamp|to_list|to_xarray)", meth).
+
+ParamToRetDataFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](reshape)", meth).
+
+// ** numpy specs begin **
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](array|asarray|asanyarray|asmatrix|asfarray|asfortranarray|ascontiguousarray|asarray_chkfinite|require|sort|lexsort|msort|sort_complex|partition)", meth).
+
+ParamToRetEquivFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](where)", meth).
+
+// math functions
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](sin|cos|tan|arcsin|arccos|arctan|hypot|arctan2|degrees|radians|unwrap|deg2rad|rad2deg|sinh|cosh|tanh|arcsinh|arccosh|arctanh|around|round_|rint|fix|floor|ceil|trunc|cross|exp|expm1|exp2|log|log10|log2|log1p|logaddexp|logaddexp2|i0|sinc|signbit|copysign|frexp|ldexp|nextafter|spacing|lcm|gcd|add|reciprocal|positive|negative|multiply|divide|power|subtract|true_divide|floor_divide|float_power|fmod|mod|modf|remainder|divmod|angle|real|imag|conj|conjugate|maximum|fmax|minimum|fmin|clip|sqrt|cbrt|square|absolute|abs|fabs|sign|heaviside|nan_to_num|real_if_close|interp)", meth).
+// math functions with two components
+ParamToRetEquivFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](hypot|arctan2|cross|nextafter|lcm|gcd|add|multiply|divide|power|subtract|true_divide|floor_divide|float_power|fmod|mod|remainder|divmod|maximum|fmax|minimum|fmin|heaviside)", meth).
+// math functions with two rets
+ParamToRetEquivFlow(1, 1, "numpy.frexp").
+ParamToRetEquivFlow(1, 1, "numpy.modf").
+
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](prod|sum|nanprod|nansum|cumprod|cumsum|nancumprod|nancumsum|diff|ediff1d|gradient|trapz|amax|nanmax|amin|nanmin|convolve)", meth).
+
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](pad)", meth).
+ParamToRetDataFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](extract)", meth).
+
+// matrices functions
+ParamToRetDataFlow(0, 1, meth),
+ParamToRetDataFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](dot|vdot|inner|outer|matmul|tensordot|kron)", meth).
+
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.]linalg[.](cholesky|qr|svd|inv|pinv|tensorinv)", meth).
+
+// array manipulation
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](reshape|ravel|moveaxis|rollaxis|swapaxes|transpose|atleast_1d|atleast_2d|atleast_3d|broadcast|broadcast_to|broadcast_arrays|expand_dims|squeeze|asscalar|concatenate|stack|block|vstack|hstack|dstack|column_stack|row_stack|split|array_split|dsplit|hsplit|vsplit|tile|repeat|delete|insert|append|resize|trim_zeros|unique|flip|fliplr|flipud|roll|rot90)", meth).
+
+// set routines
+ParamToRetDataFlow(0, 1, meth),
+ParamToRetDataFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](intersect1d|setdiff1d|setxor1d|union1d)", meth).
+
+// indexing rountines
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](take|take_along_axis|diag|diagonal)", meth).
+ParamToRetDataFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match("numpy[.](choose|compress|select)", meth).
+
+// ndarrays
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|ndarray)[.](sort|partition|clip|conj|round)", meth).
+
+ParamToRetDataFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|ndarray)[.](reshape|transpose|swapaxes|flattern|ravel|squeeze|take|repeat|choose|compress|diagonal)", meth).
+
+// [TODO] complete other specs 
+// ** numpy specs end **
+
+// ** sklearn specs begin **
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](transform|fit_transform)", meth).
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit_resample|fit_sample)", meth).
+
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(add_dummy_feature|binarize|maxabs_scale|minmax_scale|normalize|quantile_transform|robust_scale|scale|power_transform)", meth).
+ParamToRetDataFlow(0, 1, meth),
+ParamToRetDataFlow(1, 1, meth),
+ParamToRetDataFlow(2, 2, meth),
+ParamToRetDataFlow(3, 2, meth) :-
+    Invoke(_, meth, _),
+    match(".*train_test_split", meth).
+// ** sklearn specs end **
+
+
+// ** pandas specs begin **
+// equivalent flows
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](Series|DataFrame|get_dummies|cut|qcut|factorize|isna|isnull|notna|notnull|to_numeric|to_datetime|to_timedelta)", meth).
+
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries|GroupBy)[.](copy|fillna|replace|map|apply|applymap|convert_dtypes|round|abs|between|clip|cummax|cummin|cumprod|cumsum|diff|factorize|rank|rename|rename_axis|reset_index|set_axis|where|mask|add_prefix|add_suffix|backfill|bfill|ffill|pad|interpolate|sort_values|sort_index|view|shift|tshift|slice_shift|tz_convert|tz_localize|select_dtypes|insert|pop|get|transpose|assign|rolling)", meth).
+
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Series|DataFrame|FrameOrSeries|GroupBy)[.](transform)", meth).
+
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*Series[.]str[.](capitalize|casefold|lower|upper|title|swapcase|cat|center|count|decode|encode|extract|join|len|ljust|lstrip|normalize|pad|partition|removeprefix|removesuffix|repeat|replace|rjust|rpartition|rstrip|slice|slice_replace|split|rsplit|strip|translate|wrap|zfill|get_dummies)", meth).
+ParamToRetEquivFlow(0, 1, "pandas.Series.str.cat").
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*Series[.]cat[.](rename_categories|reorder_categories|add_categories|remove_categories|remove_unused_categories|set_categories|as_ordered|as_unordered)", meth).
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*Series[.]sparse[.](from_coo|to_coo)", meth).
+
+ParamToRetCondEquivFlow(0, 0, 173, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Series|DataFrame)[.](drop)", meth).
+
+// list member equiv
+ParamContentToRetCondEquivFlow(0, 1, 173, meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](concat)", meth).
+
+FlowCondition(173, "axis", "1").
+
+// dataset flow
+ParamToRetDataFlow(0, 1, meth),
+ParamToRetDataFlow(0, 2, meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](merge|merge_ordered|merge_asof)", meth).
+
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("pandas[.](melt|pivot|pivot_table|concat|unique|wide_to_long)", meth).
+
+ParamToRetDataFlow(0, 0, meth),
+ParamToRetDataFlow(1, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries)[.](align)", meth).
+
+ParamToRetDataFlow(0, 0, meth),
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries)[.](append|compare|update|join|merge)", meth).
+
+ParamToRetDataFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries)[.](r)?(add|sub|mul|div|truediv|floordiv|mod|pow|dot)", meth).
+
+ParamToRetDataFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries)[.](lt|gt|le|ge|ne|eq)", meth).
+
+ParamToRetDataFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries|Groupby)[.](combine|combine_first|groupby|expanding|ewm|pct_change|unique|head|last|reindex|reindex_like|sample|take|tail|truncate|filter|reorder_levels|swaplevel|swapaxes|stack|unstack|explode|ravel|repeat|squeeze|asfreq|asof|resample|at_time|between_time|items|iteritems|iterrows|itertuples|lookup|xs|query|melt|pipe|drop|dropna|drop_duplicates|droplevel|duplicated|agg|aggregate)", meth).
+
+ParamToRetDataFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*Series[.]str[.](extractall)", meth).
+// ** pandas specs end **
+
+// ** keras specs begin **
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(Tokenizer)[.](sequences_to_texts|texts_to_matrix|texts_to_sequences)", meth).
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(hashing_trick|one_hot|text_to_word_sequence|pad_sequences)", meth).
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(apply_affine_transform|apply_brightness_shift|apply_channel_shift|array_to_img|img_to_array|random_brightness|random_channel_shift|random_rotation|random_shear|random_shift|random_zoom|smart_resize)", meth).
+ParamToRetDataFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*ImageDataGenerator[.](flow|flow_from_dataframe)", meth).
+// ** keras specs end **
+
+
+// ** pytorch specs begin **
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match("torch[.](from_numpy)", meth).
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(DataLoader)", meth).
+ParamToRetEquivFlow(0, 0, meth) :-
+    Invoke(_, meth, _),
+    match("(Tensor|Unknown|Any)[.](bfloat16|bool|byte|char|double|float|half|int|long|short|to)", meth).
+
+ParamToRetDataFlow(0, 0, meth),
+ParamToRetDataFlow(1, 0, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](get_splits)", meth).
+ParamToRetDataFlow(0, 1, meth),
+ParamToRetDataFlow(1, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*[.](random_split)", meth).
+// ** pytorch specs end **
+
+/* -------------------
+"Taint" inputs (specified locations for reduce/duplicate in pre-processing)
+------------------- */
+.decl ParamToRetTaintSourceMethod(to:number, from:number, method:Method, taintType:symbol)
+.decl ParamToParamTaintSourceMethod(to:number, from:number, method:Method, taintType:symbol)
+.decl RetTaintSourceMethod(retIndex:number, method:Method, taintType:symbol)
+.decl ParamToRetCondTaintSourceMethod(to:number, from:number, cond_id:number, method:Method, taintType:symbol)
+.decl ParamToParamCondTaintSourceMethod(to:number, from:number, cond_id:number, method:Method, taintType:symbol)
+.decl TaintCondition(cond_id:number, src_idx:number, taintType:symbol)
+
+// numpy
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match("numpy[.](ptp|percentile|nanpercentile|quantile|nanquantile|median|average|mean|std|var|nanmedian|nanmean|nanstd|nanvar|corrcoef|correlate|cov|histogram|histogram2d|histogramdd|bincount|histogram_bin_edges|digitize|amax|max|nanmax|amin|min|nanmin|count_nonzero|trace)", meth).
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match("numpy[.]linalg[.](eig|eigh|eigvals|eigvalsh|norm|cond|det|matrix_rank|slogdet)", meth).
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|ndarray)[.](max|min|ptp|trace|sum|cumsum|mean|var|std|prod|cumprod)", meth).
+
+
+// pandas
+ParamToRetTaintSourceMethod(0, 1, "pandas.cut", "rowset").
+ParamToRetTaintSourceMethod(0, 1, "pandas.qcut", "rowset").
+ParamToRetTaintSourceMethod(0, 0, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match(".*(Unknown|Unbound|Any|Series|DataFrame|FrameOrSeries)[.](groupby|autocorr|corr|count|cov|mode|mean|median|max|min|nlargest|nsmallest|std|skew|var|sum|prod|describe|agg|aggregate|cummax|cummin|cumprod|cumsum|idxmax|idxmin|diff|pct_change|quantile|rank|sem|kurtosis|unique|nunique|backfill|bfill|ffill|pad|interpolate)", meth). // some of them actually depends on the axis
+ParamToRetTaintSourceMethod(0, 0, ".*[.]DataFrame.groupby", "rowset").
+ParamToRetTaintSourceMethod(0, 1, "sklearn.preprocessing.scale", "rowset"). 
+// sklearn.preprocessing.normalize when axis = 1
+
+ParamToRetEquivFlow(0, 1, meth) :-
+    Invoke(_, meth, _),
+    match(".*(maxabs_scale|minmax_scale|quantile_transform|robust_scale|scale|power_transform)", meth).
+
+// pre-processing leaks 
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match("(KBinsDiscretizer|PowerTransformer|QuantileTransformer|MaxAbsScaler|StandardScaler|MinMaxScaler|RobustScaler)[.]fit_transform", meth). 
+
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset")  :-
+    Invoke(_, meth, _),
+    match("(KBinsDiscretizer|PowerTransformer|QuantileTransformer|MaxAbsScaler|StandardScaler|MinMaxScaler|RobustScaler)[.]fit", meth).
+
+// imputer leaks (depends on the strategy)
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match("(Imputer|SimpleImputer|IterativeImputer|KNNImputer)[.]fit_transform", meth). 
+
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset")  :-
+    Invoke(_, meth, _),
+    match("(Imputer|SimpleImputer|IterativeImputer|KNNImputer)[.]fit", meth).
+
+// feature selection leaks
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match("(GenericUnivariateSelect|SelectPercentile|SelectKBest|SelectFpr|SelectFdr|SelectFromModel|SelectFwe|SequentialFeatureSelector|RFE|RFECV|VarianceThreshold)[.]fit_transform", meth). 
+
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset")  :-
+    Invoke(_, meth, _),
+    match("(GenericUnivariateSelect|SelectPercentile|SelectKBest|SelectFpr|SelectFdr|SelectFromModel|SelectFwe|SequentialFeatureSelector|RFE|RFECV|VarianceThreshold)[.]fit", meth). 
+
+// clustering leaks
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset")  :-
+    Invoke(_, meth, _),
+    match("(AffinityPropagation|AgglomerativeClustering|Birch|DBSCAN|FeatureAgglomeration|KMeans|MiniBatchKMeans|MeanShift|OPTICS|SpectralClustering|SpectralBiclustering|SpectralCoclustering)[.](fit|fit_predict)", meth).
+
+// other leaks
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match("(CountVectorizer|HashingVectorizer|TfidfTransformer|TfidfVectorizer|PCA)[.]fit_transform", meth). 
+
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset")  :-
+    Invoke(_, meth, _),
+    match("(CountVectorizer|HashingVectorizer|TfidfTransformer|TfidfVectorizer|PCA)[.]fit", meth).
+
+// pipeline leaks
+RetTaintSourceMethod(0, "sklearn.preprocessing.Imputer", "pipeline"). // not always a problem, be conservative
+RetTaintSourceMethod(0, "sklearn.preprocessing.MinMaxScaler", "pipeline"). 
+
+ParamToRetCondTaintSourceMethod(0, 1, 4027, "DataFrameMapper.fit_transform", "rowset"). 
+ParamToRetCondTaintSourceMethod(0, 1, 4027, "Pipeline.fit_transform",  "rowset").
+TaintCondition(4027, 0, "pipeline").
+
+// oversampling leak
+ParamToRetTaintSourceMethod(0, 1, meth, "dup")  :-
+    Invoke(_, meth, _),
+    match("(RandomOverSampler|SMOTE|SMOTENC|SMOTEN|ADASYN|BorderlineSMOTE|KMeansSMOTE|SVMSMOTE|SMOTEENN|SMOTETomek)[.](fit_resample|fit_sample)", meth).
+
+// keras preprocessing leaks
+ParamToRetTaintSourceMethod(0, 1, meth, "dup") :-
+    Invoke(_, meth, _),
+    match(".*ImageDataGenerator[.](flow|flow_from_dataframe)", meth).
+
+ParamToParamTaintSourceMethod(0, 1, meth, "rowset"),
+ParamToRetTaintSourceMethod(0, 1, meth, "rowset") :-
+    Invoke(_, meth, _),
+    match(".*Tokenizer[.]fit_on_(sequences|texts)", meth).
+
+
+/* -------------------
+Locations for train/val/test data
+------------------- */
+.decl TrainingData(method:Method, model_idx:number, data_index:number)
+.decl TestData(method:Method, model_idx:number, data_index:number)
+.decl ValData(method:Method, model_idx:number, data_index:number)
+.decl ScoredData(method:Method, model_idx:number, data_index:number)
+.decl ScoredResult(method:Method, result_index:number)
+.decl FilteredTrainingMethod(method:Method)
+
+// return index
+TrainingData(meth, 0, 1) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit|fit_generator)", meth).
+
+TestData(meth, 0, 1) :-
+    Invoke(_, meth, _),
+    match(".*[.](predict|score|evaluate|predict_proba)", meth).
+
+ValData(meth, 0, 1) :-
+    Invoke(_, meth, _),
+    match(".*(GridSearchCV|HalvingGridSearchCV|ParameterGrid|ParameterSampler|RandomizedSearchCV|HalvingRandomSearchCV)[.]fit", meth).
+ValData(meth, 0, 8) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit)", meth).
+ValData(meth, 0, 6) :-
+    Invoke(_, meth, _),
+    match(".*[.](fit_generator)", meth).
+
+ScoredData(meth, 0, 1) :-
+    Invoke(_, meth, _),
+    match(".*[.](score|evaluate|auc|calinski_harabasz_score|davies_bouldin_score|silhouette_score|silhouette_samples)", meth).
+ScoredData(meth, 1, 2) :-
+    Invoke(_, meth, _),
+    match(".*[.](plot_confusion_matrix|plot_det_curve|plot_precision_recall_curve|plot_roc_curve)", meth).
+ScoredResult(meth, 2) :-
+    Invoke(_, meth, _),
+    match(".*(accuracy_score|average_precision_score|balanced_accuracy_score|brier_score_loss|classification_report|cohen_kappa_score|confusion_matrix|dcg_score|det_curve|f1_score|fbeta_score|hamming_loss|hinge_loss|jaccard_score|log_loss|matthews_corrcoef|multilabel_confusion_matrix|ndcg_score|precision_recall_curve|precision_recall_fscore_support|precision_score|recall_score|roc_auc_score|roc_curve|top_k_accuracy_score|zero_one_loss|explained_variance_score|max_error|mean_absolute_error|mean_squared_error|mean_squared_log_error|median_absolute_error|mean_absolute_percentage_error|r2_score|mean_poisson_deviance|mean_gamma_deviance|mean_tweedie_deviance|d2_tweedie_score|mean_pinball_loss|coverage_error|label_ranking_average_precision_score|label_ranking_loss|adjusted_mutual_info_score|adjusted_rand_score|completeness_score|contingency_matrix|pair_confusion_matrix|fowlkes_mallows_score|homogeneity_completeness_v_measure|homogeneity_score|mutual_info_score|normalized_mutual_info_score|rand_score|v_measure_score)", meth).
+// known pre-processing/clustering methods not for training a classification model
+// [Problem!!] Unknown custom methods may also be pre-processing
+FilteredTrainingMethod(meth) :-
+    Invoke(_, meth, _),
+    (match("(GenericUnivariateSelect|SelectPercentile|SelectKBest|SelectFpr|SelectFdr|SelectFromModel|SelectFwe|SequentialFeatureSelector|RFE|RFECV|VarianceThreshold)[.]fit", meth);
+    match("(CountVectorizer|HashingVectorizer|TfidfTransformer|TfidfVectorizer|PCA)[.]fit", meth);
+    match("(Imputer|SimpleImputer|IterativeImputer|KNNImputer)[.]fit", meth);
+    match("(FunctionTransformer|KBinsDiscretizer|KernelCenterer|LabelBinarizer|LabelEncoder|MultiLabelBinarizer|MaxAbsScaler|MinMaxScaler|Normalizer|OneHotEncoder|OrdinalEncoder|PolynomialFeatures|PowerTransformer|QuantileTransformer|RobustScaler|SplineTransformer|StandardScaler)[.]fit", meth);
+    match("(AffinityPropagation|AgglomerativeClustering|Birch|DBSCAN|FeatureAgglomeration|KMeans|MiniBatchKMeans|MeanShift|OPTICS|SpectralClustering|SpectralBiclustering|SpectralCoclustering)[.]fit", meth)).
+
+// ---- Type Info ----
+.decl IsDataFrame(var:Var)
+.decl IsDataFrameEquivIndexing(var:Var)
+
+IsDataFrame(var) :-
+    VarType(var, varType),
+    match(".*(DataFrame|FrameOrSeries|_LocIndexer)", varType).
+IsDataFrameEquivIndexing(idx) :-
+    VarType(idx, "str"); VarType(idx, "list[str]"); VarType(idx, "list").
+
+// ---- Constant Propagation ----
+.decl ConstantValue(var:Var, constant:symbol)
+.decl VarEquals(var1:Var, var2:Var)
+
+ConstantValue(var, constant) :-
+    AssignBoolConstant(var, constant);
+    AssignStrConstant(var, constant);
+    AssignIntConstant(var, constant);
+    AssignFloatConstant(var, constant).
+
+// ---- Common Expression Detection ----
+VarEquals(var1, var2) :-
+    ConstantValue(var1, constant),
+    ConstantValue(var2, constant).
+
+VarEquals(var, var) :-
+    VarPointsTo(var, _, _, _).
+
+VarEquals(var1, var2) :-
+    VarEquals(var2, var1).
+
+VarEquals(var1, var3) :-
+    VarEquals(var1, var2),
+    VarEquals(var2, var3).
+
+VarEquals(var1, var2) :-
+    AssignVar(var1, var2); AssignGlobal(var1, var2); InterProcAssign(var1, _, var2, _).
+
+VarEquals(var1, var2) :-
+    (LoadField(var1, base1, fld), LoadField(var2, base2, fld);
+    LoadIndex(var1, base1, i1), LoadIndex(var2, base2, i2), (i1 = i2; VarEquals(i1, i2))),
+    VarEquals(base1, base2).
+
+// add LoadSlice case [TODO]
+
+VarEquals(var1, var2) :-
+    CallGraphEdge(invo1, _, meth, _), ActualParam(1, invo1, param1), ActualReturn(0, invo1, var1),
+    CallGraphEdge(invo2, _, meth, _), ActualParam(1, invo2, param2), ActualReturn(0, invo2, var2),
+    PureMethod(meth),
+    VarEquals(param1, param2).
+
+// ---- call-graph construction ----
+.decl CallGraphEdge(invo:Invocation, callerCtx:Context, meth:Method, calleeCtx:Context)
+.decl ArityMatch(invo:Invocation, callerCtx:Context, meth:Method, calleeCtx:Context)
+.decl Reachable(meth:Method, ctx:Context)
+
+Reachable(toMeth, calleeCtx),
+CallGraphEdge(invo, callerCtx, toMeth, calleeCtx) :-
+    Invoke(invo, toMeth, inMeth),
+    Reachable(inMeth, callerCtx),
+    callerCtx = [invo1, invo2],
+    calleeCtx = [invo2, invo].
+
+Reachable("", ["", ""]). // entry point
+
+// [TODO] invoke graph
+.decl InvokeEdge(to_invo:Invocation, to_ctx:Context, from_invo:Invocation, from_ctx:Context)
+.decl InvokePath(to_invo:Invocation, to_ctx:Context, from_invo:Invocation, from_ctx:Context)
+InvokeEdge(to_invo, ctx, from_invo, ctx) :-
+    NextInvoke(from_invo, to_invo),
+    CallGraphEdge(from_invo, ctx, _, _),
+    CallGraphEdge(to_invo, ctx, _, _).
+
+InvokeEdge(to_invo, calleeCtx, from_invo, callerCtx) :-
+    CallGraphEdge(from_invo, callerCtx, toMeth, calleeCtx),
+    Invoke(to_invo, _, toMeth),
+    CallGraphEdge(to_invo, calleeCtx, _, _),
+    !NextInvoke(_, to_invo).
+
+InvokeEdge(to_invo, callerCtx, from_invo, calleeCtx) :-
+    InvokeEdge(to_invo, callerCtx, mid_invo, callerCtx),
+    CallGraphEdge(mid_invo, callerCtx, toMeth, calleeCtx),
+    Invoke(from_invo, _, toMeth),
+    NextInvoke(from_invo, "invo_end").
+
+InvokePath(to_invo, to_ctx, from_invo, from_ctx) :-
+    InvokeEdge(to_invo, to_ctx, from_invo, from_ctx).
+
+InvokePath(to_invo, to_ctx, from_invo, from_ctx) :-
+    InvokeEdge(to_invo, to_ctx, mid_invo, mid_ctx),
+    InvokePath(mid_invo, mid_ctx, from_invo, from_ctx).
+
+
+/* -------------------
+    Pointer analysis
+------------------- */
+
+.decl VarPointsTo(var:Var, ctx:Context, value:Value, hctx:HContext)
+.decl IndexContentPointsTo(baseValue:Value, baseHctx:HContext, value:Value, hctx:HContext) // always insensitive
+.decl FieldPointsTo(base:Value, baseHctx:HContext, field:Field, value:Value, hctx:HContext)
+.decl InterProcAssign(to:Var, calleeCtx:Context, from:Var, callerCtx:Context)
+.decl SliceIndex(st:Var, ed:Var, step:Var, index:Index)
+
+// base case
+VarPointsTo(var, ctx, value, hctx) :- 
+    Alloc(var, value, inMeth),
+    Reachable(inMeth, ctx),
+    ctx = [invo1, invo2],
+    hctx = [invo2].
+
+// local assignment
+VarPointsTo(to, ctx, value, hctx) :- 
+    AssignVar(to, from),
+    VarPointsTo(from, ctx, value, hctx). 
+
+// assignment from/to global
+VarPointsTo(to, meth_ctx, value, hctx) :- 
+    AssignGlobal(to, from),
+    VarInMethod(to, meth),
+    Reachable(meth, meth_ctx),
+    VarPointsTo(from, _, value, hctx).
+
+// load/store fields
+// the analysis is field-insensitive for unknown fields 
+// currently the insensitive part always applies [TODO]
+VarPointsTo(to, ctx, value, hctx) :- 
+    LoadField(to, base, _),
+    VarPointsTo(base, ctx, value, hctx).
+VarPointsTo(to, ctx, value, hctx) :- 
+    LoadField(to, base, fld),
+    VarPointsTo(base, ctx, baseValue, baseHctx),
+    FieldPointsTo(baseValue, baseHctx, fld, value, hctx).
+FieldPointsTo(baseValue, baseHctx, fld, value, hctx) :-
+    StoreField(base, fld, from),
+    VarPointsTo(base, ctx, baseValue, baseHctx),
+    VarPointsTo(from, ctx, value, hctx).
+FieldPointsTo(baseValue, baseHctx, fld, value, hctx) :-
+    StoreFieldSSA(_, base, fld, from),
+    VarPointsTo(base, ctx, baseValue, baseHctx),
+    VarPointsTo(from, ctx, value, hctx).
+
+// load/store indexes
+// the base objects could be list/tuple/dict/Series/DataFrame (any type that implements _getitem__ method)
+// the semantics depends on specific implementations, e.g., indexing DataFrame may return a copy or a view of the original object
+VarPointsTo(to, ctx, value, hctx) :- 
+    LoadIndex(to, base, _),
+    VarPointsTo(base, ctx, value, hctx).
+//     !IsDataFrame(base).
+// VarPointsTo(to, ctx, value, hctx) :- 
+//     LoadIndex(to, base, idx),
+//     VarPointsTo(base, ctx, value, hctx),
+//     IsDataFrame(base),
+//     IsDataFrameEquivIndexing(idx).
+// Alloc(to, newValue, inMeth) :- 
+//     LoadIndex(to, base, idx),
+//     VarPointsTo(base, ctx, value, hctx),
+//     IsDataFrame(base),
+//     !IsDataFrameEquivIndexing(idx),
+//     Reachable(inMeth, ctx),
+//     newValue = ValueIdMacro(value, idx).
+VarPointsTo(to, ctx, value, hctx) :- 
+    LoadIndex(to, base, _),
+    VarPointsTo(base, ctx, baseValue, baseHctx),
+    IndexContentPointsTo(baseValue, baseHctx, value, hctx).
+// [TODO] add this case
+// IndexContentPointsTo(toValue, toHctx, value, hctx) :- 
+//     LoadIndex(to, base, _),
+//     VarPointsTo(to, ctx, toValue, toHctx),
+//     VarPointsTo(base, ctx, baseValue, baseHctx),
+//     IndexContentPointsTo(baseValue, baseHctx, value, hctx).
+IndexContentPointsTo(baseValue, baseHctx, value, hctx) :- 
+    StoreIndex(base, _, from),
+    VarPointsTo(base, ctx, baseValue, baseHctx),
+    VarPointsTo(from, ctx, value, hctx).
+IndexContentPointsTo(baseValue, baseHctx, value, hctx) :- 
+    StoreIndexSSA(_, base, _, from),
+    VarPointsTo(base, ctx, baseValue, baseHctx),
+    VarPointsTo(from, ctx, value, hctx).
+
+// load/store slices
+SliceIndex(st, ed, step, index) :-
+    LoadSlice(_, _, st, ed, step),
+    index = ValueIdMacro(ValueIdMacro(st, ed), step).
+SliceIndex(st, ed, step, index) :-
+    (StoreSlice(_, st, ed, step, _); StoreSliceSSA(_, _, st, ed, step, _)),
+    index = ValueIdMacro(ValueIdMacro(st, ed), step).
+// slices are shallow copies; the contents point to the same objects
+IndexContentPointsTo(toValue, toHctx, value, hctx) :- 
+    LoadSlice(to, from, st, ed, step),
+    SliceIndex(st, ed, step, _),
+    VarPointsTo(to, ctx, toValue, toHctx),
+    VarPointsTo(from, ctx, fromValue, fromHctx),
+    IndexContentPointsTo(fromValue, fromHctx, value, hctx). 
+// // alternative modeling: slice as references
+// VarPointsTo(to, ctx, value, hctx) :- 
+//     LoadSlice(to, base, _, _, _),
+//     VarPointsTo(base, ctx, value, hctx).
+
+// IndexContentPointsTo(baseValue, baseHctx, value, hctx) :- 
+//     StoreSlice(base, st, ed, step, from),
+//     SliceIndex(st, ed, step, _),
+//     VarPointsTo(base, ctx, baseValue, baseHctx),
+//     VarPointsTo(from, ctx, value, hctx).
+// IndexContentPointsTo(baseValue, baseHctx, value, hctx) :- 
+//     StoreSliceSSA(_, base, st, ed, step, from),
+//     SliceIndex(st, ed, step, _),
+//     VarPointsTo(base, ctx, baseValue, baseHctx),
+//     VarPointsTo(from, ctx, value, hctx).
+VarPointsTo(base, ctx, value, hctx) :- 
+    (StoreSlice(base, _, _, _, from); StoreSliceSSA(_, base, _, _, _, from)),
+    VarPointsTo(from, ctx, value, hctx).  
+
+// extra cases for SSA
+VarPointsTo(new_base, ctx, baseValue, hctx) :- 
+    (StoreIndexSSA(new_base, base, _, _); StoreFieldSSA(new_base, base, _, _); StoreSliceSSA(new_base, base, _, _, _, _)),
+    VarPointsTo(base, ctx, baseValue, hctx).
+
+VarPointsTo(to, ctx, value, hctx) :- 
+    MethodSSA(to_idx, from_idx, meth),
+    CallGraphEdge(invo, ctx, meth, _),
+    ActualParam(from_idx, invo, from),
+    ActualReturn(to_idx, invo, to),
+    VarPointsTo(from, ctx, value, hctx).
+
+// arity checking:
+ArityMatch(invo, callerCtx, meth, calleeCtx) :-
+    CallGraphEdge(invo, callerCtx, meth, calleeCtx),
+    !FilteredMethod(meth),
+    c1 = count: {FormalReturn(index, meth, from)},
+    c2 = count: {ActualReturn(index, invo, to)},
+    c1 = c2.
+
+// inter-procedural cases
+InterProcAssign(to, calleeCtx, from, callerCtx) :-
+    CallGraphEdge(invo, callerCtx, meth, calleeCtx),
+    !FilteredMethod(meth),
+    FormalParam(index, meth, to),
+    ActualParam(index, invo, from).
+InterProcAssign(to, calleeCtx, from, callerCtx) :-
+    CallGraphEdge(invo, callerCtx, meth, calleeCtx),
+    !FilteredMethod(meth),
+    FormalParam(_, meth, to),
+    ActualKeyParam(to, invo, from).
+InterProcAssign(to, callerCtx, from, calleeCtx) :-
+    CallGraphEdge(invo, callerCtx, meth, calleeCtx),
+    ArityMatch(invo, callerCtx, meth, calleeCtx),
+    !FilteredMethod(meth),
+    FormalReturn(index, meth, from),
+    ActualReturn(index, invo, to).
+// arity mismatch: pair all pairs
+InterProcAssign(to, callerCtx, from, calleeCtx) :-
+    CallGraphEdge(invo, callerCtx, meth, calleeCtx),
+    !ArityMatch(invo, callerCtx, meth, calleeCtx),
+    !FilteredMethod(meth),
+    FormalReturn(_, meth, from),
+    ActualReturn(_, invo, to).
+
+VarPointsTo(to, toCtx, value, hctx) :- 
+    InterProcAssign(to, toCtx, from, fromCtx),
+    VarPointsTo(from, fromCtx, value, hctx).
+
+// ---- alias & access path ----
+.decl AccessFrom(to:Var, toCtx:Context, from:Var, fromCtx:Context)
+.decl Alias(to:Var, toCtx:Context, from:Var, fromCtx:Context)
+
+AccessFrom(to, toCtx, from, fromCtx) :-
+    VarPointsTo(to, toCtx, baseValue, baseHctx),
+    (FieldPointsTo(baseValue, baseHctx, fld, value, hctx); IndexContentPointsTo(baseValue, baseHctx, value, hctx)),
+    VarPointsTo(from, fromCtx, value, hctx).
+
+AccessFrom(to, toCtx, from, fromCtx) :-
+    AccessFrom(to, toCtx, mid, midCtx),
+    AccessFrom(mid, midCtx, from, fromCtx).
+
+Alias(from, fromCtx, to, toCtx),
+Alias(to, toCtx, from, fromCtx) :-
+    VarPointsTo(to, toCtx, value, hctx),
+    VarPointsTo(from, fromCtx, value, hctx).
+
+/* -------------------
+    Information flow analysis
+------------------- */
+.decl FlowFrom(to:Var, toCtx:Context, from:Var, fromCtx:Context, tag:symbol)
+.decl FlowFromEdge(to:Var, toCtx:Context, from:Var, fromCtx:Context, tag:symbol)
+.decl FlowFromExtended(to:Var, toCtx:Context, from:Var, fromCtx:Context, tag:symbol)
+.decl NonDataTransferEdge(to:Var, from:Var)
+
+// unspecified methods: all parameters flow into return results
+FlowFromEdge(to, toCtx, from, fromCtx, "normal") :-
+    CallGraphEdge(invo, _, meth, _),
+    (ActualParam(_, invo, from); ActualKeyParam(_, invo, from)),
+    ActualReturn(_, invo, to),
+    (!LocalMethod(meth); meth = "__phi__"),
+    VarPointsTo(to, toCtx, _, _),
+    VarPointsTo(from, fromCtx, _, _),
+    toCtx = fromCtx.
+
+// specified flows between parameters
+FlowFromEdge(to, toCtx, from, fromCtx, "normal") :-
+    CallGraphEdge(invo, _, meth, _),
+    ParamToParamFlow(toIdx, fromIdx, meth),
+    ActualParam(toIdx, invo, to),
+    ActualParam(fromIdx, invo, from),
+    VarPointsTo(to, toCtx, _, _),
+    VarPointsTo(from, fromCtx, _, _),
+    toCtx = fromCtx.
+
+// inter-procedural flows
+FlowFromEdge(to, toCtx, from, fromCtx, "normal") :-
+    InterProcAssign(to, toCtx, from, fromCtx).
+
+// inner-procedural flows
+FlowFromEdge(to, toCtx, from, fromCtx, "normal") :-
+    (AssignVar(to, from); AssignBinOp(to, from, _, _); AssignBinOp(to, _, _, from);
+    LoadIndex(to, from, _); StoreIndex(to, _, from); LoadField(to, from, _); StoreField(to, _, from); LoadSlice(to, from, _, _, _); StoreSlice(to, _, _, _, from);
+    StoreIndexSSA(to, _, _, from); StoreFieldSSA(to, _, _, from); StoreSliceSSA(to, _, _, _, _, from);
+    StoreIndexSSA(to, from, _, _); StoreFieldSSA(to, from, _, _); StoreSliceSSA(to, from, _, _, _, _)),
+    VarPointsTo(to, toCtx, _, _),
+    VarPointsTo(from, fromCtx, _, _),
+    toCtx = fromCtx.
+
+FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+FlowFromEdge(to, toCtx, from, fromCtx, "equiv") :-
+    AssignGlobal(to, from),
+    VarPointsTo(to, toCtx, _, _),
+    VarPointsTo(from, fromCtx, _, _).
+
+// in-place updates will trigger flow to aliases
+FlowFromEdge(from, fromCtx, to, toCtx,  "normal"),
+FlowFromEdge(from, fromCtx, to, toCtx,  "data") :-
+    (StoreIndexSSA(to, mid, _, _); StoreFieldSSA(to, mid, _, _); StoreSliceSSA(to, mid, _, _, _, _)),
+    VarPointsTo(to, toCtx, value, hctx),
+    VarPointsTo(mid, midCtx, value, hctx),
+    Alias(to, toCtx, from, fromCtx),
+    toCtx = midCtx.
+FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+FlowFromEdge(to, toCtx, from, fromCtx,  "data") :-
+    CallGraphEdge(invo, _, meth, _),
+    MethodUpdate(fromIdx, meth),
+    ActualParam(fromIdx, invo, from),
+    Alias(to, toCtx, from, fromCtx).
+FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+FlowFromEdge(to, toCtx, from, fromCtx,  "data") :-
+    CallGraphEdge(invo, _, meth, _),
+    MethodUpdate(idx, meth),
+    MethodSSA(fromIdx, idx, meth),
+    ActualReturn(fromIdx, invo, from),
+    Alias(to, toCtx, from, fromCtx).
+// FlowFromEdge(from, fromCtx, to, toCtx,  "normal"),
+// FlowFromEdge(from, fromCtx, to, toCtx,  "data") :-
+//     MethodSSA(to_idx, from_idx, meth),
+//     CallGraphEdge(invo, _, meth, _),
+//     ActualParam(from_idx, invo, from),
+//     ActualReturn(to_idx, invo, to),
+//     VarPointsTo(to, toCtx, value, hctx),
+//     VarPointsTo(from, fromCtx, value, hctx),
+//     fromCtx = toCtx.
+// [TODO] updates will also propagate to objects that could acess it?
+
+// self-loop
+FlowFromEdge(from, fromCtx, from, fromCtx, "normal"),
+FlowFromEdge(from, fromCtx, from, fromCtx, "equiv")  :-
+    VarPointsTo(from, fromCtx, _, _).
+
+// other known equivalent flows
+FlowFromEdge(to, toCtx, from, fromCtx, "equiv") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    (StoreIndexSSA(to, from, _, _); StoreFieldSSA(to, from, _, _); StoreSliceSSA(to, from, _, _, _, _);
+    InterProcAssign(to, _, from, _); AssignVar(to, from)).
+
+FlowFromEdge(to, toCtx, from, fromCtx, "equiv") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    LoadField(to, from, f).
+    // (f = "loc"; f = "values"). // should also add type requirement [TODO]
+
+FlowFromEdge(to, toCtx, from, fromCtx, "equiv") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    LoadIndex(to, from, idx),
+    IsDataFrameEquivIndexing(idx).
+
+// marked equivalent flows
+FlowFromEdge(to, toCtx, from, fromCtx, "equiv") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    CallGraphEdge(invo, _, meth, _),
+    ParamToRetEquivFlow(toIdx, fromIdx, meth),
+    ActualParam(fromIdx, invo, from),
+    ActualReturn(toIdx, invo, to).
+FlowFromEdge(to, toCtx, from, fromCtx, "equiv") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    CallGraphEdge(invo, _, meth, _),
+    ParamToRetCondEquivFlow(toIdx, fromIdx, cond_id, meth),
+    FlowCondition(cond_id, keyword, content),
+    ActualKeyParam(keyword, invo, var),
+    ConstantValue(var, content),
+    ActualParam(fromIdx, invo, from),
+    ActualReturn(toIdx, invo, to).
+FlowFromEdge(to, toCtx, from, fromCtx, "equiv") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    CallGraphEdge(invo, _, meth, _),
+    ParamContentToRetCondEquivFlow(toIdx, fromIdx, cond_id, meth),
+    FlowCondition(cond_id, keyword, content),
+    ActualKeyParam(keyword, invo, var),
+    ConstantValue(var, content),
+    ActualParam(fromIdx, invo, fromList),
+    VarPointsTo(fromList, toCtx, fromListValue, baseHctx),
+    VarPointsTo(from, fromCtx, fromValue, hctx),
+    IndexContentPointsTo(fromListValue, baseHctx, fromValue, hctx),
+    ActualReturn(toIdx, invo, to).
+
+FlowFromEdge(to, toCtx, from, fromCtx, "data") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "equiv").
+
+FlowFromEdge(to, toCtx, from, fromCtx, "data") :-
+    (AssignBinOp(to, from, _, _); AssignBinOp(to, _, _, from);
+    LoadIndex(to, from, _); StoreIndex(to, _, from); LoadField(to, from, _); StoreField(to, _, from); LoadSlice(to, from, _, _, _); StoreSlice(to, _, _, _, from);
+    StoreIndexSSA(to, _, _, from); StoreFieldSSA(to, _, _, from); StoreSliceSSA(to, _, _, _, _, from)),
+    VarPointsTo(to, toCtx, _, _),
+    VarPointsTo(from, fromCtx, _, _),
+    toCtx = fromCtx.
+
+FlowFromEdge(to, toCtx, from, fromCtx, "data") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    CallGraphEdge(invo, _, meth, _),
+    ParamToRetDataFlow(toIdx, fromIdx, meth),
+    ActualParam(fromIdx, invo, from),
+    ActualReturn(toIdx, invo, to).
+
+FlowFromEdge(to, toCtx, from, fromCtx, "data") :-
+    FlowFromEdge(to, toCtx, from, fromCtx, "normal"),
+    CallGraphEdge(invo, _, meth, _),
+    ParamToParamDataFlow(toIdx, fromIdx, meth),
+    ActualParam(fromIdx, invo, from),
+    ActualParam(toIdx, invo, to).
+
+// // flows between data
+// // now we assume all flows are between data, except for known model variables
+// NonDataTransferEdge(to, from) :-
+//     ParamToRetFlowFilterMethod(to_idx, from_idx, meth),
+//     CallGraphEdge(invo, _, meth, _),
+//     ActualParam(from_idx, invo, from),
+//     ActualReturn(to_idx, invo, to).
+
+// FlowFromEdge(to, toCtx, from, fromCtx, "data") :-
+//     !NonDataTransferEdge(to, from),
+//     !IsModel(to), !IsModel(from), 
+//     FlowFromEdge(to, toCtx, from, fromCtx, "normal").
+
+// flow path base case
+FlowFrom(to, toCtx, from, fromCtx, tag) :-
+    FlowFromEdge(to, toCtx, from, fromCtx, tag).
+
+// flow path transitive case
+FlowFrom(to, toCtx, from, fromCtx, tag) :-
+    FlowFrom(to, toCtx, mid, midCtx, tag),
+    FlowFromEdge(mid, midCtx, from, fromCtx, tag).
+
+// [deprecated]
+FlowFromExtended(to, toCtx, from, fromCtx, tag) :-
+    FlowFrom(to, toCtx, from, fromCtx, tag).
+
+
+// compute shortest-path length in information-flow graph
+// distinguish normal edges vs alias edges?
+// .type VarCtx <: symbol
+// .type Path <: symbol
+
+// .decl PathLength(to:Var, toCtx:Context, from:Var, fromCtx:Context, tag:symbol, path:symbol, len:number)
+// .decl MinPathLength(to:Var, toCtx:Context, from:Var, fromCtx:Context, tag:symbol, path:symbol, len:number)
+// .decl PathCrossContext(to:Var, toCtx:Context, from:Var, fromCtx:Context, tag:symbol, path:symbol, n:number)
+
+// PathLength(to, toCtx, from, fromCtx, tag, path, 1) :-
+//     FlowFromEdge(to, toCtx, from, fromCtx, tag),
+//     (to != from; toCtx != fromCtx),
+//     toCtx = [invo1, invo2], fromCtx = [invo3, invo4],
+//     path = MakePath(MakeVarCtx(to, MakeCtx(invo1, invo2)), MakePath(MakeVarCtx(from, MakeCtx(invo3, invo4)), "[]")).
+
+// PathLength(to, toCtx, from, fromCtx, tag, new_path, i+1) :-
+//     FlowFromEdge(to, toCtx, mid, midCtx, tag),
+//     PathLength(mid, midCtx, from, fromCtx, tag, path, i),
+//     toCtx = [invo1, invo2],
+//     !contains(MakeVarCtx(to, MakeCtx(invo1, invo2)), path),
+//     new_path = MakePath(MakeVarCtx(to, MakeCtx(invo1, invo2)), path).
+
+// MinPathLength(to, toCtx, from, fromCtx, tag, path, minl) :-
+//     PathLength(to, toCtx, from, fromCtx, tag, path, l),
+//     minl = l,
+//     minl = min l : { PathLength(to, toCtx, from, fromCtx, tag, _, l) }.
+
+// PathCrossContext(to, toCtx, from, fromCtx, tag, path, 1) :-
+//     PathLength(to, toCtx, from, fromCtx, tag, path, 1),
+//     toCtx != fromCtx.
+// PathCrossContext(to, toCtx, from, fromCtx, tag, path, 0) :- 
+//     PathLength(to, toCtx, from, fromCtx, tag, path, 1),
+//     toCtx = fromCtx.
+
+// PathCrossContext(to, toCtx, from, fromCtx, tag, new_path, i+1) :-
+//     FlowFromEdge(to, toCtx, mid, midCtx, tag),
+//     PathCrossContext(mid, midCtx, from, fromCtx, tag, path, i),
+//     MinPathLength(to, toCtx, from, fromCtx, tag, new_path, l),
+//     MinPathLength(mid, midCtx, from, fromCtx, tag, path, l-1),
+//     toCtx != midCtx.
+
+// PathCrossContext(to, toCtx, from, fromCtx, tag, new_path, i) :-
+//     FlowFromEdge(to, toCtx, mid, midCtx, tag),
+//     PathCrossContext(mid, midCtx, from, fromCtx, tag, path, i),
+//     MinPathLength(to, toCtx, from, fromCtx, tag, new_path, l),
+//     MinPathLength(mid, midCtx, from, fromCtx, tag, path, l-1),
+//     toCtx = midCtx.
+
+// .output MinPathLength
+// .output PathCrossContext
+
+
+/* -----------------------------
+Overlap analysis
+----------------------------- */
+.decl DataOverlap(train:Var, ctx1:Context, test:Var, ctx2:Context)
+DataOverlap(train, ctx1, test, ctx2) :- // split with slicing will never be recognized as overlaps
+    FlowFromExtended(test, ctx2, src_equiv, ctx_src, "data"), 
+    FlowFromExtended(train, ctx1, src_equiv, ctx_src, "equiv").
+// [TODO] update rules transitive + varequal
+
+// [TODO] Overlap in fields/contents
+DataOverlap(train, ctx1, test, ctx2) :- DataOverlap(test, ctx2, train, ctx1).
+
+DataOverlap(train, ctx1, test, ctx2) :-
+    DuplicateEdge(to, toCtx, _, _),
+    FlowFromExtended(train, ctx1, to, toCtx, "data"),
+    FlowFromExtended(test, ctx2, to, toCtx, "data").
+
+DataOverlap(train, ctx1, test, ctx2) :-
+    DuplicateEdge(to, toCtx, from, fromCtx),
+    FlowFromExtended(train, ctx1, to, toCtx, "data"),
+    DataOverlap(test, ctx2, from, fromCtx).
+
+DataOverlap(train, ctx1, test, ctx2) :-
+    DuplicateEdge(to, toCtx, from, fromCtx),
+    FlowFromExtended(test, ctx2, to, toCtx, "data"),
+    DataOverlap(train, ctx1, from, fromCtx).
+
+// check whether two models are related
+// FlowFromExtended(model1, ctx1, model2, ctx2) :-
+//     IsModel(model1), IsModel(model2),
+//     FlowFromExtended(model1, ctx1, model2, ctx2, _).
+// FlowFromExtended(model2, ctx2, model1, ctx1) :- FlowFromExtended(model1, ctx1, model2, ctx2).
+
+
+/* -----------------------------
+Training/validation/test data rules
+----------------------------- */
+.decl TrainingDataWithModel(model:Var, train:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl ValOrTestDataWithModel(model:Var, test:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl ScoredDataWithModel(model:Var, test:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl TestDataWithModel(model:Var, test:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl ValDataWithModel(model:Var, val:Var, invo:Invocation, meth:Method, ctx:Context)
+// .decl TrainTestPair(trainModel:Var, train:Var, testModel:Var, test:Var)
+// .decl TrainValPair(trainModel:Var, train:Var, valModel:Var, val:Var)
+// .decl IsModel(model:Var)
+
+// IsModel(model) :- 
+//     TrainingDataWithModel(model, _, _, _); ValOrTestDataWithModel(model, _, _, _).
+
+TrainingDataWithModel(model, train, invo, meth, ctx) :-
+    TrainingData(meth, model_idx, idx),
+    ActualParam(idx, invo, train),
+    CallGraphEdge(invo, ctx, meth, _),
+    !FilteredTrainingMethod(meth),
+    ActualReturn(model_idx, invo, model).
+
+// could be test/validation data; to be determined
+ValOrTestDataWithModel(model, test, invo, meth, ctx) :-
+    TestData(meth, model_idx, idx),
+    ActualParam(idx, invo, test),
+    CallGraphEdge(invo, ctx, meth, _),
+    ActualParam(model_idx, invo, model).
+
+// find test/validation data used to compute scores
+// [Case 1] score functions called upon models
+ScoredDataWithModel(model, test, invo, meth, ctx) :-
+    ValOrTestDataWithModel(model, test, invo, meth, ctx),
+    ScoredData(meth, model_idx, idx),
+    ActualParam(idx, invo, test),
+    ActualParam(model_idx, invo, model).
+// [Case 2] prediction results are used to compute scores
+ScoredDataWithModel(model, test, invo, meth, ctx1) :-
+    ValOrTestDataWithModel(model, test, invo, meth, ctx1),
+    ActualReturn(ret_idx, invo, ret),
+    ret_idx = 0,
+    FlowFromExtended(res, ctx2, ret, ctx1, _),
+    ScoredResult(meth2, res_idx),
+    CallGraphEdge(invo2, ctx2, meth2, _),
+    CallGraphEdge(invo, ctx1, meth, _),
+    ActualParam(res_idx, invo2, res).
+
+// validation data rules
+// [Case 1] Specified method arguments that are used for validation 
+ValDataWithModel(model, val, invo, meth, ctx) :-
+    ValData(meth, model_idx, idx),
+    ActualParam(idx, invo, val),
+    CallGraphEdge(invo, ctx, meth, _),
+    ActualParam(model_idx, invo, model).
+ValDataWithModel(model, val, invo, meth, ctx) :-
+    ValData(meth, model_idx, idx),
+    MethodIndexToKey(idx, keyword, meth),
+    ActualKeyParam(keyword, invo, tup),
+    keyword = "validation_data",
+    StoreIndex(tup, "0", val),
+    CallGraphEdge(invo, ctx, meth, _),
+    ActualParam(model_idx, invo, model).
+// [Case 2] Invoke multiple times in a loop
+ValDataWithModel(model, val, invo, meth, ctx) :-
+    ValOrTestDataWithModel(model, val, invo, meth, ctx),
+    !FlowFromExtended(val, ctx, loop_var, _, _),
+    InvokeInLoop(invo, loop_var).
+// [Case 3] Scored multiple times for different models
+ValDataWithModel(testModel, val, invo, meth, ctx1),
+ValDataWithModel(testModel2, val2, invo2, meth2, ctx2) :-
+    ScoredDataWithModel(testModel, val, invo, meth, ctx1),
+    ScoredDataWithModel(testModel2, val2, invo2, meth2, ctx2),
+    // VarEquals(val, val2),
+    DataOverlap(val, ctx1, val2, ctx2),
+    // invo != invo2,
+    !FlowFromExtended(testModel, ctx1, testModel2, ctx2, _),
+    !FlowFromExtended(testModel2, ctx2, testModel, ctx1, _).
+// [Case 4] propagation to overlapping data
+ValDataWithModel(model, test, invo, meth, ctx1) :-
+    ValOrTestDataWithModel(model, test, invo, meth, ctx1),
+    ValDataWithModel(testModel, val, invo2, meth2, ct2),
+    (FlowFromExtended(model, ctx1, testModel, ctx2, _); FlowFromExtended(testModel, ctx2, model, ctx1, _)),
+    DataOverlap(test, ctx1, val, ctx2).
+
+// all remaining data is treated as test data
+TestDataWithModel(model, test, invo, meth, ctx) :-
+    ValOrTestDataWithModel(model, test, invo, meth, ctx),
+    !ValDataWithModel(model, test, invo, meth, ctx).
+
+// extra cases for modeling pytorch
+.decl TorchModelWithData(model:Var, train:Var, invo:Invocation, meth:Method)
+TorchModelWithData(model, data, invo, meth) :-
+    Invoke(invo, meth, _),
+    match(".*[.](forward)", meth),
+    ActualParam(0, invo, model),
+    ActualParam(1, invo, data).
+
+TorchModelWithData(model, data, invo, meth) :-
+    Invoke(invo, meth, _),
+    model = as(meth, Var),
+    VarType(model, subtype),
+    SubType(subtype, "Module"),
+    ActualParam(1, invo, data).
+
+TrainingDataWithModel(model, data, invo, meth, ctx) :-
+    TorchModelWithData(model, data, invo, meth),
+    FlowFromExtended(loss, ctx2, data, ctx, _),
+    CallGraphEdge(invo2, ctx2, meth2, _),
+    match(".*[.](backward)", meth2),
+    ActualParam(0, invo2, loss).
+
+ValOrTestDataWithModel(model, data, invo, meth, ctx) :-
+    TorchModelWithData(model, data, invo, meth),
+    CallGraphEdge(invo, ctx, meth, _),
+    !TrainingDataWithModel(model, data, invo, meth, ctx).
+
+// Test model should be paired with nearest training model
+.decl ModelPair(testModel:Var, ctx1:Context, trainModel:Var, ctx2:Context)
+.decl ModelPairCandidate(testModel:Var, ctx1:Context, trainModel:Var, ctx2:Context)
+.decl Telemetry_ModelPair(testModel:Var, test:Var, invo:Invocation, meth:Method, ctx1:Context, trainModel:Var, train:Var, invo2:Invocation, meth2:Method, ctx2:Context)
+ModelPairCandidate(testModel, ctx1, trainModel, ctx2) :-
+    ValOrTestDataWithModel(testModel, _, invo1, _, ctx1),
+    TrainingDataWithModel(trainModel, _, invo2, _, ctx2),
+    FlowFromExtended(testModel, ctx1, trainModel, ctx2, _),
+    InvokePath(invo1, ctx1, invo2, ctx2).
+
+Telemetry_ModelPair(trainModel, train, invo2, meth2, ctx2, testModel, test, invo1, meth1, ctx1),
+ModelPair(testModel, ctx1, trainModel, ctx2) :-
+    ModelPairCandidate(testModel, ctx1, trainModel, ctx2),
+    ValOrTestDataWithModel(testModel, test, invo1, meth1, ctx1),
+    TrainingDataWithModel(trainModel, train, invo2, meth2, ctx2),
+    c2 = count : { ModelPairCandidate(testModel, ctx1, trainModel2, ctx3), TrainingDataWithModel(trainModel2, _, invo3, _, ctx3), InvokePath(invo3, ctx3, invo2, ctx2), trainModel2 != trainModel},
+    c2 = 0.
+
+/* -----------------------------
+Leak detection rules
+----------------------------- */
+.decl PreProcessingLeak(var:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl OverlapLeak(testModel:Var, ctx1:Context, trainModel:Var, ctx2:Context, invo:Invocation, meth:Method)
+.decl FinalOverlapLeak(trainModel:Var, train:Var, invo:Invocation, meth:Method, ctx:Context, c:number)
+.decl MultiUseTestLeak(test:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl Telemetry_PreProcessingLeak(trainModel:Var, train:Var, trainInvo:Invocation, trainMeth:Method, ctx1:Context, testModel:Var, test:Var, testInvo:Invocation, testMeth:Method, ctx2:Context, des:Var, src:Var)
+.decl Telemetry_FinalPreProcessingLeak(trainModel:Var, train:Var, trainInvo:Invocation, trainMeth:Method, ctx1:Context, testModel:Var, test:Var, testInvo:Invocation, testMeth:Method, ctx2:Context, des:Var, src:Var)
+.decl Telemetry_OverlapLeak(trainModel:Var, train:Var, trainInvo:Invocation, trainMeth:Method, ctx1:Context, testModel:Var, test:Var, testInvo:Invocation, testMeth:Method, ctx2:Context)
+.decl Telemetry_MultiUseTestLeak(testModel:Var, test:Var, testInvo:Invocation, testMeth:Method, ctx1:Context, testModel2:Var, test2:Var, testInvo2:Invocation, testMeth2:Method, ctx2:Context)
+
+// General edges/taints
+// Taints are initialized at places where pre-processing leak might happen
+.decl TaintStarts(var:Var, ctx: Context, label:symbol)
+.decl TaintStartsTarget(to:Var, toCtx:Context, from:Var, fromCtx:Context, invo:Invocation, meth:Method, label:symbol)
+
+TaintStarts(var, callerCtx, label) :-
+    CallGraphEdge(invo, callerCtx, meth, _),
+    RetTaintSourceMethod(idx, meth, label),
+    ActualReturn(idx, invo, var).
+
+TaintStarts(var, callerCtx, label),
+TaintStartsTarget(target, callerCtx, var, callerCtx, invo, meth, label) :-
+    CallGraphEdge(invo, callerCtx, meth, _),
+    (ParamToParamTaintSourceMethod(toIdx, fromIdx, meth, label), ActualParam(toIdx, invo, target);
+    ParamToRetTaintSourceMethod(toIdx, fromIdx, meth, label), ActualReturn(toIdx, invo, target);
+    ParamToRetCondTaintSourceMethod(toIdx, fromIdx, cond_id, meth, label), TaintCondition(cond_id, srcIdx, srcTaintType),
+    ActualParam(srcIdx, invo, src), FlowFrom(src, callerCtx, src_start, src_start_ctx, _), TaintStarts(src_start, src_start_ctx, srcTaintType), ActualReturn(toIdx, invo, target)),
+    ActualParam(fromIdx, invo, var).
+
+/* -----------------------------
+Pre-processing leak detection
+----------------------------- */
+.decl ReduceEdge(to:Var, toCtx:Context, from:Var, fromCtx:Context)
+ReduceEdge(to, toCtx, from, fromCtx) :-
+    TaintStartsTarget(to, toCtx, from, fromCtx, _, _, "rowset").
+
+Telemetry_PreProcessingLeak(trainModel, train, invo, meth, ctx2, testModel, test, invo2, meth2, ctx1, reduced_from_src, src),
+PreProcessingLeak(src, invo, meth, ctx2) :-
+    TrainingDataWithModel(trainModel, train, invo, meth, ctx2),
+    ValOrTestDataWithModel(testModel, test, invo2, meth2, ctx1),
+    ModelPair(testModel, ctx1, trainModel, ctx2),
+    !DataOverlap(test, ctx1, train, ctx2),
+    ReduceEdge(reduced_from_src, r_ctx, src, src_ctx),
+    (FlowFromExtended(train, ctx2, reduced_from_src, r_ctx, _); FlowFromExtended(test, ctx1, reduced_from_src, r_ctx, _)),
+    DataOverlap(test, ctx1, src, src_ctx).
+
+// Only report val leak when there is no test data
+Telemetry_FinalPreProcessingLeak(trainModel, train, invo, meth, ctx2, testModel, test, invo2, meth2, ctx1, reduced_from_src, src) :-
+    Telemetry_PreProcessingLeak(trainModel, train, invo, meth, ctx2, testModel, test, invo2, meth2, ctx1, reduced_from_src, src),
+    TestDataWithModel(testModel, test, invo2, meth2, ctx1).
+
+Telemetry_FinalPreProcessingLeak(trainModel, train, invo, meth, ctx2, testModel, test, invo2, meth2, ctx1, reduced_from_src, src) :-
+    Telemetry_PreProcessingLeak(trainModel, train, invo, meth, ctx2, testModel, test, invo2, meth2, ctx1, reduced_from_src, src),
+    ValOrTestDataWithModel(testModel, test, invo2, meth2, ctx1),
+    NoTestData(trainModel, train, invo, meth, ctx2).
+
+/* -----------------------------
+Overlap leak detection
+----------------------------- */
+.decl DuplicateEdge(to:Var, toCtx:Context, from:Var, fromCtx:Context)
+
+DuplicateEdge(to, toCtx, from, fromCtx) :-
+    TaintStartsTarget(to, toCtx, from, fromCtx, _, _, "dup").
+
+// [TODO] only problematic when all test data overlaps
+Telemetry_OverlapLeak(trainModel, train, invo, meth, ctx1, testModel, test, invo2, meth2, ctx2),
+OverlapLeak(testModel, ctx2, trainModel, ctx1, invo, meth) :-
+    TrainingDataWithModel(trainModel, train, invo, meth, ctx1),
+    ValOrTestDataWithModel(testModel, test, invo2, meth2, ctx2),
+    DataOverlap(train, ctx1, test, ctx2),
+    // !VarEquals(train, test),
+    ModelPair(testModel, ctx1, trainModel, ctx2).
+
+FinalOverlapLeak(trainModel, train, invo, meth, ctx1, c1) :-
+    TrainingDataWithModel(trainModel, train, invo, meth, ctx1),
+    c1 = count : { ModelPair(testModel, ctx2, trainModel, ctx1), ValOrTestDataWithModel(testModel, test, invo2, meth2, ctx2)},
+    c2 = count : { ModelPair(testModel, ctx2, trainModel, ctx1), ValOrTestDataWithModel(testModel, test, invo2, meth2, ctx2), Telemetry_OverlapLeak(trainModel, train, invo, meth, ctx1, testModel, test, invo2, meth2, ctx2)},
+    // c3 = count : { ModelPair(testModel, _, trainModel, _), ValOrTestDataWithModel(testModel, test, invo2, meth2), VarEquals(train, test)},
+    c1 = c2,
+    c1 > 0.
+
+/* -----------------------------
+No test data detection
+----------------------------- */
+.decl NoValAndTestData(trainModel:Var, train:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl NoTestData(trainModel:Var, train:Var, invo:Invocation, meth:Method, ctx:Context)
+
+NoValAndTestData(trainModel, train, invo, meth, ctx2) :-
+    TrainingDataWithModel(trainModel, train, invo, meth, ctx2),
+    c = count : { ModelPair(testModel, ctx1, trainModel, ctx2), ValOrTestDataWithModel(testModel, test, _, _, ctx1), !DataOverlap(train, ctx2, test, ctx1)},
+    c = 0.
+
+NoTestData(trainModel, train, invo, meth, ctx2) :-
+    TrainingDataWithModel(trainModel, train, invo, meth, ctx2),
+    c = count : {ModelPair(testModel, ctx1, trainModel, ctx2), TestDataWithModel(testModel, test, _, _, ctx1), !DataOverlap(train, ctx2, test, ctx1)},
+    c = 0.
+
+.decl FilteredTests(testModel:Var, test:Var, invo:Invocation, meth:Method, ctx:Context)
+.decl FinalNoTestData(msg:symbol, cnt:number)
+.decl FinalNoTestDataWithMultiUse(msg:symbol, cnt:number)
+FilteredTests(testModel, test, invo, meth, ctx1) :-
+    ModelPair(testModel, ctx1, trainModel, ctx2),
+    TrainingDataWithModel(trainModel, train, _, _, ctx2),
+    TestDataWithModel(testModel, test, invo, meth, ctx1),
+    ScoredDataWithModel(scoreModel, data, invo2, meth2, ctx3),
+    !FlowFromExtended(testModel, ctx1, scoreModel, ctx3, _), 
+    !FlowFromExtended(scoreModel, ctx3, testModel, ctx1, _),
+    DataOverlap(test, ctx1, data, ctx3).
+FilteredTests(testModel, test, invo, meth, ctx1) :-
+    ModelPair(testModel, ctx1, trainModel, ctx2),
+    TrainingDataWithModel(trainModel, train, _, _, ctx2),
+    TestDataWithModel(testModel, test, invo, meth, ctx1),
+    DataOverlap(test, ctx1, train, ctx2).
+FinalNoTestData("NOTEST", c1) :-
+    TrainingDataWithModel(_, _, _, _, _), // there should be at least one training data
+    c1 = count : {ModelPair(testModel, ctx1, _, _), TestDataWithModel(testModel, test, invo, meth, ctx1)},
+    c2 = count : {ModelPair(testModel, ctx1, _, _), FilteredTests(testModel, test, invo, meth, ctx1)},
+    c1 = c2.
+FinalNoTestDataWithMultiUse(msg, c) :-
+    FinalNoTestData(msg, c),
+    ValOrTestDataWithModel(model, test, invo, meth, ctx),
+    ValDataWithModel(model, test, invo, meth, ctx).
+
+
+/* -----------------------------
+Multi-used test data detection
+----------------------------- */
+Telemetry_MultiUseTestLeak(testModel, test, invo, meth, ctx1, testModel2, test2, invo2, meth2, ctx2),
+MultiUseTestLeak(test, invo, meth, ctx1) :-
+    ScoredDataWithModel(testModel, test, invo, meth, ctx1),
+    ScoredDataWithModel(testModel2, test2, invo2, meth2, ctx2),
+    DataOverlap(test, ctx1, test2, ctx2),
+    // invo != invo2,
+    !FlowFromExtended(testModel, ctx1, testModel2, ctx2, _),
+    !FlowFromExtended(testModel2, ctx2, testModel, ctx1, _).
+
+// ---- outputs ----
+.output VarEquals
+.output CallGraphEdge
+
+// basic analysis results
+.output VarPointsTo
+.output FieldPointsTo
+.output IndexContentPointsTo
+.output Alias
+
+.output FlowFromEdge
+.output FlowFrom
+.output FlowFromExtended
+
+.output DataOverlap
+
+.output InvokeEdge
+.output InvokePath
+
+// model-related info
+.output TorchModelWithData
+.output TrainingDataWithModel
+.output TestDataWithModel
+.output ValDataWithModel
+.output ValOrTestDataWithModel
+.output ScoredDataWithModel
+.output ModelPairCandidate
+.output ModelPair
+.output Telemetry_ModelPair
+
+// leakage analysis results
+.output TaintStartsTarget
+.output PreProcessingLeak
+.output OverlapLeak
+.output NoTestData
+.output NoValAndTestData
+.output MultiUseTestLeak
+
+.output FilteredTests
+.output FinalOverlapLeak
+.output FinalNoTestData
+.output FinalNoTestDataWithMultiUse
+
+.output Telemetry_PreProcessingLeak
+.output Telemetry_FinalPreProcessingLeak
+.output Telemetry_OverlapLeak
+.output Telemetry_MultiUseTestLeak

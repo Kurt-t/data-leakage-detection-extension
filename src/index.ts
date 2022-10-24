@@ -1,7 +1,10 @@
 import {
+  ILabShell,
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+
+import type { IRetroShell } from '@retrolab/application';
 
 import { ICommandPalette, IFrame } from '@jupyterlab/apputils';
 
@@ -30,6 +33,8 @@ class IFrameWidget extends IFrame {
   export const get = 'server:get-file';
 }
 
+//const root = PageConfig.getOption('serverRoot');
+
 /**
  * Initialization data for the data-leakage-detection extension.
  */
@@ -45,42 +50,42 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ) => {
     console.log('JupyterLab extension data-leakage-detection is activated!');
 
-    // POST request
-    const dataToSend = { name: 'George' };  // TODO
-    try {
-      const reply = await requestAPI<any>('detect', {
-        body: JSON.stringify(dataToSend),
-        method: 'POST',
-      });
-      console.log(reply);
-    } catch (reason) {
-      console.error(
-        `Error on POST /data-leakage-detection/detect ${dataToSend}.\n${reason}`
-      );
-    }
-
-    const { commands, shell } = app;
+    const { commands } = app;
     const command = CommandIDs.get;
     const category = 'Extension Examples';
+    let shell = app.shell as ILabShell | IRetroShell ;
+    let current_file = '';
+    shell.currentChanged.connect((_: any, change: any) => {
+        console.log(change);
+        // TODO: check newValue not null, type is file/notebook
+        const { newValue } = change;
+        current_file = newValue && newValue.context && newValue.context._path;
+        console.log(current_file);
+    });
 
     commands.addCommand(command, {
       label: 'Get Leakage Report in a IFrame Widget',
       caption: 'Get Leakage Report in a IFrame Widget',
-      execute: () => {
+      execute: async () => {
+        // POST request
+        const dataToSend = { name: current_file };  // TODO
+        try {
+          const reply = await requestAPI<any>('detect', {
+            body: JSON.stringify(dataToSend),
+            method: 'POST',
+          });
+          console.log(reply);
+        } catch (reason) {
+          console.error(
+            `Error on POST /data-leakage-detection/detect ${dataToSend}.\n${reason}`
+          );
+        }
         const widget = new IFrameWidget();
         shell.add(widget, 'main');
       },
     });
 
     palette.addItem({ command, category: category });
-
-    if (launcher) {
-      // Add launcher
-      launcher.add({
-        command: command,
-        category: category,
-      });
-    }
   },
 };
 

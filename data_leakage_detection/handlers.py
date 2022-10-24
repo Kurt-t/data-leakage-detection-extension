@@ -7,6 +7,8 @@ from jupyter_server.utils import url_path_join
 import tornado
 from tornado.web import StaticFileHandler
 
+from .main import main
+
 class RouteHandler(APIHandler):
     # The following decorator should be present on all verb methods (head, get, post,
     # patch, put, delete, options) to ensure only authorized user can request the
@@ -15,7 +17,11 @@ class RouteHandler(APIHandler):
     def post(self):
         # input_data is a dictionary with a key "name"
         input_data = self.get_json_body()
-        data = {"greetings": "Hello {}, enjoy JupyterLab!".format(input_data["name"])}
+        # TODO: how to get server root path
+        input_file_name = input_data["name"]
+        abs_file_path = os.path.join(os.getcwd(), input_file_name)
+        main(abs_file_path)
+        data = {"greetings": "Hello {}, enjoy JupyterLab!".format(abs_file_path)}
         self.finish(json.dumps(data))
 
 
