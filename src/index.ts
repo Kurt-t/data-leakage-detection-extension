@@ -15,11 +15,11 @@ import { ILauncher } from '@jupyterlab/launcher';
 import { requestAPI } from './handler';
 
 class IFrameWidget extends IFrame {
-  constructor() {
+  constructor(name: string) {
     super();
     const baseUrl = PageConfig.getBaseUrl();
-    this.url = baseUrl + 'jlab-ext-example/public/index.html';  // TODO
-    this.id = 'doc-example';
+    this.url = baseUrl + 'data-leakage-detection/report/' + name;  // TODO
+    this.id = 'report';
     this.title.label = 'Leakage Report';
     this.title.closable = true;
     this.node.style.overflowY = 'auto';
@@ -32,8 +32,6 @@ class IFrameWidget extends IFrame {
  namespace CommandIDs {
   export const get = 'server:get-file';
 }
-
-//const root = PageConfig.getOption('serverRoot');
 
 /**
  * Initialization data for the data-leakage-detection extension.
@@ -75,13 +73,18 @@ const plugin: JupyterFrontEndPlugin<void> = {
             method: 'POST',
           });
           console.log(reply);
+          if (reply.ok) {
+            // TODO: content in iframe not interactive
+            const widget = new IFrameWidget(reply.filename);
+            shell.add(widget, 'main');
+          }
+          // TODO: if not ok
         } catch (reason) {
           console.error(
             `Error on POST /data-leakage-detection/detect ${dataToSend}.\n${reason}`
           );
+          // TODO: if error
         }
-        const widget = new IFrameWidget();
-        shell.add(widget, 'main');
       },
     });
 

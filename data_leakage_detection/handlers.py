@@ -17,11 +17,14 @@ class RouteHandler(APIHandler):
     def post(self):
         # input_data is a dictionary with a key "name"
         input_data = self.get_json_body()
-        # TODO: how to get server root path
         input_file_name = input_data["name"]
         abs_file_path = os.path.join(os.getcwd(), input_file_name)
-        main(abs_file_path)
-        data = {"greetings": "Hello {}, enjoy JupyterLab!".format(abs_file_path)}
+        result = main(abs_file_path)
+        data = {'ok': False, 'filename': ''}
+        if not isinstance(result, str):
+            report_file_name = '.'.join(input_file_name.split('.')[:-1]) + '.html'
+            data['ok'] = True
+            data['filename'] = report_file_name
         self.finish(json.dumps(data))
 
 
@@ -34,10 +37,7 @@ def setup_handlers(web_app):
     handlers = [(route_pattern, RouteHandler)]
     web_app.add_handlers(host_pattern, handlers)
 
-    doc_url = url_path_join(base_url, url_path, "public")
-    doc_dir = os.getenv(
-        "JLAB_SERVER_EXAMPLE_STATIC_DIR",
-        os.path.join(os.path.dirname(__file__), "public"),
-    )
+    doc_url = url_path_join(base_url, url_path, "report")
+    doc_dir = os.getcwd()
     handlers = [("{}/(.*)".format(doc_url), StaticFileHandler, {"path": doc_dir})]  # local root dir of content
     web_app.add_handlers(".*$", handlers)

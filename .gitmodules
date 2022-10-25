@@ -1,3 +1,4 @@
 [submodule "data_leakage_detection/pyright"]
 	path = data_leakage_detection/pyright
 	url = https://github.com/malusamayo/pyright.git
+	ignore = dirty
