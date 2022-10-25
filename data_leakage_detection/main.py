@@ -4,6 +4,7 @@ import astunparse
 import json
 import shutil
 import argparse
+import shutil
 import time
 import traceback
 from .global_collector import GlobalCollector
@@ -156,6 +157,10 @@ def main(input_path):
             return "Failed to convert"
     
     print("Success!\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t".format(t[0]+t[1]+t[3]+t[4], t[2], t[5], sum(t)))
+    # delete files
+    os.remove(ir_path)
+    os.remove(json_path)
+    shutil.rmtree(fact_path)
     return t
 
 if __name__ == "__main__":

@@ -19,12 +19,23 @@ class RouteHandler(APIHandler):
         input_data = self.get_json_body()
         input_file_name = input_data["name"]
         abs_file_path = os.path.join(os.getcwd(), input_file_name)
-        result = main(abs_file_path)
-        data = {'ok': False, 'filename': ''}
-        if not isinstance(result, str):
-            report_file_name = '.'.join(input_file_name.split('.')[:-1]) + '.html'
+        # check file type
+        analysis_path = abs_file_path
+        file_prefix, file_suffix = os.path.splitext(input_file_name)
+        if file_suffix == '.ipynb':
+            # generate a temporary script file from notebook
+            # TODO: if name is occupied
+            # Or "python3 -m jupyter ..."
+            os.system(f"jupyter nbconvert --to script {abs_file_path}")  # TODO: if failed
+            analysis_path = os.path.join(os.getcwd(), file_prefix) + '.py'
+        result = main(analysis_path)
+        data = {'ok': False, 'filename': '', 'log': ''}
+        if not isinstance(result, str):  # if no error
+            report_file_name = file_prefix + '.html'
             data['ok'] = True
             data['filename'] = report_file_name
+            if file_suffix == '.ipynb':
+                os.remove(analysis_path)
         self.finish(json.dumps(data))
 
 
