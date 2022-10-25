@@ -10,19 +10,18 @@ import { ICommandPalette, IFrame } from '@jupyterlab/apputils';
 
 import { PageConfig } from '@jupyterlab/coreutils';
 
-import { ILauncher } from '@jupyterlab/launcher';
-
 import { requestAPI } from './handler';
 
-class IFrameWidget extends IFrame {
+class ReportWidget extends IFrame {
   constructor(name: string) {
     super();
     const baseUrl = PageConfig.getBaseUrl();
-    this.url = baseUrl + 'data-leakage-detection/report/' + name;  // TODO
+    this.url = baseUrl + 'data-leakage-detection/report/' + name;
     this.id = 'report';
     this.title.label = 'Leakage Report';
     this.title.closable = true;
     this.node.style.overflowY = 'auto';
+    this.sandbox = ['allow-scripts'];  // allow scripts run in the iframe
   }
 }
 
@@ -39,16 +38,15 @@ class IFrameWidget extends IFrame {
 const plugin: JupyterFrontEndPlugin<void> = {
   id: 'data-leakage-detection:plugin',
   autoStart: true,
-  optional: [ILauncher],
   requires: [ICommandPalette],
   activate: async (
     app: JupyterFrontEnd,
     palette: ICommandPalette,
-    launcher: ILauncher | null
   ) => {
     console.log('JupyterLab extension data-leakage-detection is activated!');
 
     const { commands } = app;
+    
     const command = CommandIDs.get;
     const category = 'Extension Examples';
     let shell = app.shell as ILabShell | IRetroShell ;
@@ -75,7 +73,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           console.log(reply);
           if (reply.ok) {
             // TODO: content in iframe not interactive
-            const widget = new IFrameWidget(reply.filename);
+            const widget = new ReportWidget(reply.filename);
             shell.add(widget, 'main');
           }
           // TODO: if not ok
