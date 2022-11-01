@@ -6,9 +6,9 @@ import {
 
 import type { IRetroShell } from '@retrolab/application';
 
-import { ICommandPalette, IFrame, ToolbarButton } from '@jupyterlab/apputils';
+import { ICommandPalette, ToolbarButton } from '@jupyterlab/apputils';
 
-import { PageConfig } from '@jupyterlab/coreutils';
+//import { PageConfig } from '@jupyterlab/coreutils';
 
 import { IDisposable, DisposableDelegate } from '@lumino/disposable';
 
@@ -16,22 +16,13 @@ import { CommandRegistry } from '@lumino/commands';
 
 import { DocumentRegistry } from '@jupyterlab/docregistry';
 
-import { NotebookPanel, INotebookModel } from '@jupyterlab/notebook';
+import { NotebookPanel, INotebookModel, INotebookTracker } from '@jupyterlab/notebook';
+
+import { CodeMirrorEditor } from '@jupyterlab/codemirror';
+import { Cell } from '@jupyterlab/cells';
+//import * as CodeMirror from 'codemirror';
 
 import { requestAPI } from './handler';
-
-class ReportWidget extends IFrame {
-  constructor(name: string) {
-    super();
-    const baseUrl = PageConfig.getBaseUrl();
-    this.url = baseUrl + 'data-leakage-detection/report/' + name;
-    this.id = 'report';
-    this.title.label = 'Leakage Report';
-    this.title.closable = true;
-    this.node.style.overflowY = 'auto';
-    this.sandbox = ['allow-scripts'];  // allow scripts run in the iframe
-  }
-}
 
 /**
  * The command IDs used by the server extension plugin.
@@ -40,7 +31,39 @@ class ReportWidget extends IFrame {
   export const get = 'server:get-file';
 }
 
-const detect = async (filename: string, shell: JupyterFrontEnd.IShell) => {
+const highlightClass = {
+  className: 'leakage-detection-highlight',
+  css: `
+    background-color: var(--jp-warn-color2)
+  `
+}
+
+const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
+  if (!notebookTracker.currentWidget) {
+    return;
+  }
+  if (!highlightMap) {
+    highlightMap = [
+      {cell: 4, loc: [{line: 5, ch: 0}]},
+      {cell: 5, loc: [{line: 0, ch: 0}]},
+      {cell: 5, loc: [{line: 1, ch: 0}]},
+      {cell: 10, loc: [{line: 2, ch: 0}]},
+      {cell: 10, loc: [{line: 3, ch: 0}]},
+    ];
+  }
+  for (const block of highlightMap) {
+    const line = block.loc[0].line;
+    const from = {line: line, ch: 0};
+    const to = {line: line + 1, ch: 0};
+    const notebook = notebookTracker.currentWidget.content;
+    const cell: Cell = notebook.widgets[block.cell];
+    const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
+    const doc = editor.doc;
+    doc.markText(from, to, highlightClass);
+  }
+}
+
+const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker) => {
   // POST request
   const dataToSend = { name: filename }; 
   try {
@@ -51,8 +74,7 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell) => {
     console.log(reply);
     if (reply.ok) {
       // TODO: content in iframe not interactive
-      const widget = new ReportWidget(reply.filename);
-      shell.add(widget, 'main');
+      highlight(notebookTracker, null);
     }
     // TODO: if not ok
   } catch (reason) {
@@ -66,8 +88,10 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell) => {
 class ButtonExtension implements DocumentRegistry.IWidgetExtension<NotebookPanel, INotebookModel>
 {
   shell: JupyterFrontEnd.IShell
-  constructor(shell: JupyterFrontEnd.IShell) {
+  notebookTracker: INotebookTracker
+  constructor(shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker) {
     this.shell = shell;
+    this.notebookTracker = notebookTracker;
   }
   
   /**
@@ -82,7 +106,7 @@ class ButtonExtension implements DocumentRegistry.IWidgetExtension<NotebookPanel
     context: DocumentRegistry.IContext<INotebookModel>
   ): IDisposable {
     const createReport = () => {
-      detect(context.path, this.shell);
+      detect(context.path, this.shell, this.notebookTracker);
     };
     const button = new ToolbarButton({
       className: 'create-report-button',
@@ -104,10 +128,15 @@ class ButtonExtension implements DocumentRegistry.IWidgetExtension<NotebookPanel
 const plugin: JupyterFrontEndPlugin<void> = {
   id: 'data-leakage-detection:plugin',
   autoStart: true,
-  requires: [ICommandPalette],
+  requires: [
+    ICommandPalette,
+    INotebookTracker,
+    //IEditorTracker,
+  ],
   activate: async (
     app: JupyterFrontEnd,
     palette: ICommandPalette,
+    notebookTracker: INotebookTracker,
   ) => {
     console.log('JupyterLab extension data-leakage-detection is activated!');
 
@@ -124,14 +153,14 @@ const plugin: JupyterFrontEndPlugin<void> = {
     });
 
     commands.addCommand(command, {
-      label: 'Get Leakage Report in a IFrame Widget',
-      caption: 'Get Leakage Report in a IFrame Widget',
-      execute: (() => detect(current_file, shell)) as unknown as CommandRegistry.CommandFunc<Promise<any>>  // TODO: why
+      label: 'Leakage Detection',
+      caption: 'Leakage Detection',
+      execute: (() => detect(current_file, shell, notebookTracker)) as unknown as CommandRegistry.CommandFunc<Promise<any>>  // TODO: why
     });
 
     palette.addItem({ command, category: category });
 
-    app.docRegistry.addWidgetExtension('Notebook', new ButtonExtension(shell));
+    app.docRegistry.addWidgetExtension('Notebook', new ButtonExtension(shell, notebookTracker));
   },
 };
 
