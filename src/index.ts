@@ -38,17 +38,61 @@ const highlightClass = {
   `
 }
 
+const underlineClass = {
+  className: 'leakage-detection-underline',
+  // dotted, wavy, or dashed
+  css: `
+    text-decoration: underline dashed red;
+    text-decoration-skip-ink: none;
+  `,
+  title: 'Potential preprocessing leakage'  // set tooltips
+}
+
+const jumpButton = (notebookTracker: INotebookTracker) => {
+  const button = document.createElement("button");
+  button.innerHTML = "Jump to leakage source";
+  button.className = "leakage-button";
+  button.onclick = function() {
+    // jump to
+    const highlightMap = [
+      {cell: 4, loc: [{line: 5, ch: 0}]},
+      {cell: 5, loc: [{line: 0, ch: 0}]},
+      {cell: 5, loc: [{line: 1, ch: 0}]},
+    ]
+    const notebook = notebookTracker.currentWidget!.content;
+    notebook.deselectAll();
+    notebook.activeCellIndex = 4;
+    notebook.mode = 'edit';
+    let activeEditor = notebook.activeCell!.editor;
+    const len = activeEditor.getLine(5)!.length;
+    activeEditor.setSelection({start: {line: 5, column: len}, end: {line: 5, column: len}});
+    for (const block of highlightMap) {
+      const line = block.loc[0].line;
+      const from = {line: line, ch: 0};
+      const to = {line: line + 1, ch: 0};
+      const cell: Cell = notebook.widgets[block.cell];
+      const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
+      const doc = editor.doc;
+      doc.markText(from, to, highlightClass);
+    }
+  };
+  return button;
+}
+
 const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
   if (!notebookTracker.currentWidget) {
     return;
   }
+  const message1 = "Some preprocessing before splitting the dataset might " + 
+    "lead to data leakage. Refer to: https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing";
+  const message2 = "A possible leakage of this train/test is detected";
   if (!highlightMap) {
     highlightMap = [
-      {cell: 4, loc: [{line: 5, ch: 0}]},
-      {cell: 5, loc: [{line: 0, ch: 0}]},
-      {cell: 5, loc: [{line: 1, ch: 0}]},
-      {cell: 10, loc: [{line: 2, ch: 0}]},
-      {cell: 10, loc: [{line: 3, ch: 0}]},
+      {cell: 4, loc: [{line: 5, ch: 0}], message: message1},
+      {cell: 5, loc: [{line: 0, ch: 0}], message: message1},
+      {cell: 5, loc: [{line: 1, ch: 0}], message: message1},
+      {cell: 10, loc: [{line: 2, ch: 0}], message: message2},
+      {cell: 10, loc: [{line: 3, ch: 0}], message: message2},
     ];
   }
   for (const block of highlightMap) {
@@ -59,13 +103,23 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     const cell: Cell = notebook.widgets[block.cell];
     const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
     const doc = editor.doc;
-    doc.markText(from, to, highlightClass);
+    doc.markText(from, to, underlineClass);
+    const node = document.createElement("div");  // document
+    var icon = node.appendChild(document.createElement("span"))
+    icon.innerHTML = "!";
+    icon.className = "lint-error-icon";
+    node.appendChild(document.createTextNode(block.message));
+    node.className = "lint-error";
+    if (block.cell === 10) {
+      node.appendChild(jumpButton(notebookTracker));
+    }
+    doc.addLineWidget(line, node);
   }
 }
 
 const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker) => {
   // POST request
-  const dataToSend = { name: filename }; 
+  const dataToSend = { name: filename };
   try {
     const reply = await requestAPI<any>('detect', {
       body: JSON.stringify(dataToSend),
