@@ -21,8 +21,50 @@ import { NotebookPanel, INotebookModel, INotebookTracker } from '@jupyterlab/not
 import { CodeMirrorEditor } from '@jupyterlab/codemirror';
 import { Cell } from '@jupyterlab/cells';
 //import * as CodeMirror from 'codemirror';
+import { Tooltip } from '@jupyterlab/tooltip';
+import { Widget } from '@lumino/widgets';
 
 import { requestAPI } from './handler';
+//import { EditorTooltipManager, FreeTooltip } from './leakage_tooltip';
+
+// class NewTooltip extends Tooltip {
+//   constructor(options: Tooltip.IOptions) {
+//     super(options);
+//     this.hide();
+//   }
+
+//   handleEvent(event: Event): void {
+//     if (this.isDisposed) {
+//       return;
+//     }
+
+//     const { node } = this;
+//     const target = event.target as HTMLElement;
+
+//     switch (event.type) {
+//       case 'mouseover': {
+//         this.show();
+//         break;
+//       }
+//       case 'keydown': {
+//         // ESC or Backspace cancel anyways
+//         this.hide();
+//         break;
+//       }
+//       case 'mousedown': {
+//         if (node.contains(target)) {
+//           this.activate();
+//           return;
+//         }
+//         this.hide();
+//         break;
+//       }
+//       default:
+//         super.handleEvent(event);
+//         break;
+//     }
+//   }
+// }
 
 /**
  * The command IDs used by the server extension plugin.
@@ -45,7 +87,7 @@ const underlineClass = {
     text-decoration: underline dashed red;
     text-decoration-skip-ink: none;
   `,
-  title: 'Potential preprocessing leakage'  // set tooltips
+  //title: 'Potential preprocessing leakage'  // set tooltips
 }
 
 const jumpButton = (notebookTracker: INotebookTracker) => {
@@ -103,6 +145,8 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     const cell: Cell = notebook.widgets[block.cell];
     const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
     const doc = editor.doc;
+    //TODO: cell.children: Widget
+    cell.inputArea.children
     doc.markText(from, to, underlineClass);
     const node = document.createElement("div");  // document
     var icon = node.appendChild(document.createElement("span"))
@@ -113,7 +157,31 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     if (block.cell === 10) {
       node.appendChild(jumpButton(notebookTracker));
     }
-    doc.addLineWidget(line, node);
+    //doc.addLineWidget(line, node);
+
+    //const bundle = { 'text/plain': "test string" };
+    //const tooltip = new NewTooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
+    //Widget.attach(tooltip, editor.host);
+    //editor.editor.addWidget(from, tooltip.node, true);
+    // if (block.cell === 4) {
+    //   const bundle = { 'text/plain': "test string test string\n" };
+    //   const tooltip = new Tooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
+    //   Widget.attach(tooltip, document.body);
+    // }
+    // Option: editor.editor.addLineClass
+    const lines = editor.host.getElementsByClassName("CodeMirror-code")[0];
+
+    const testLine = lines.childNodes[line];
+    console.log(testLine);
+    const bundle = { 'text/plain':  block.message};
+    if (block.cell === 4) {
+      testLine.addEventListener('mouseenter', (event) => {  // mouseenter so that only execute once
+        console.log("enter event");
+        const tooltip = new Tooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
+        Widget.attach(tooltip, document.body);
+        console.log("finish event");
+      });
+    }
   }
 }
 
@@ -139,6 +207,7 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookT
   }
 }
 
+// reference: TODO
 class ButtonExtension implements DocumentRegistry.IWidgetExtension<NotebookPanel, INotebookModel>
 {
   shell: JupyterFrontEnd.IShell
@@ -211,6 +280,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
       caption: 'Leakage Detection',
       execute: (() => detect(current_file, shell, notebookTracker)) as unknown as CommandRegistry.CommandFunc<Promise<any>>  // TODO: why
     });
+    //commands.addKeyBinding()
 
     palette.addItem({ command, category: category });
 

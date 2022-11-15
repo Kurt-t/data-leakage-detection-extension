@@ -2157,6 +2157,19 @@
     simulate-event "~1.4.0"
     ts-jest "^26.3.0"
 
+"@jupyterlab/tooltip@^3.5.0":
+  version "3.5.0"
+  resolved "https://registry.yarnpkg.com/@jupyterlab/tooltip/-/tooltip-3.5.0.tgz#309c542551666164bb32d893936dac10e10f4e9a"
+  integrity sha512-+r4ZP4qvs2wRUFzXXaNTiXM8GPOEzgfBQQK3N1lYQ6dn+FgD12m9Se6UGRguiJ12Bbh7kZLe3xpYQ681hO5CIg==
+  dependencies:
+    "@jupyterlab/apputils" "^3.5.0"
+    "@jupyterlab/codeeditor" "^3.5.0"
+    "@jupyterlab/rendermime" "^3.5.0"
+    "@jupyterlab/services" "^6.5.0"
+    "@lumino/coreutils" "^1.11.0"
+    "@lumino/messaging" "^1.10.0"
+    "@lumino/widgets" "^1.33.0"
+
 "@jupyterlab/translation@^3.4.8":
   version "3.4.8"
   resolved "https://registry.yarnpkg.com/@jupyterlab/translation/-/translation-3.4.8.tgz#9958bbbcabdcf913e96fcb267b223dccfa4d1151"
@@ -9801,6 +9814,24 @@ verror@1.10.0:
     assert-plus "^1.0.0"
     core-util-is "1.0.2"
     extsprintf "^1.2.0"
+
+vscode-jsonrpc@8.0.2:
+  version "8.0.2"
+  resolved "https://registry.yarnpkg.com/vscode-jsonrpc/-/vscode-jsonrpc-8.0.2.tgz#f239ed2cd6004021b6550af9fd9d3e47eee3cac9"
+  integrity sha512-RY7HwI/ydoC1Wwg4gJ3y6LpU9FJRZAUnTYMXthqhFXXu77ErDd/xkREpGuk4MyYkk4a+XDWAMqe0S3KkelYQEQ==
+
+vscode-languageserver-protocol@^3.17.2:
+  version "3.17.2"
+  resolved "https://registry.yarnpkg.com/vscode-languageserver-protocol/-/vscode-languageserver-protocol-3.17.2.tgz#beaa46aea06ed061576586c5e11368a9afc1d378"
+  integrity sha512-8kYisQ3z/SQ2kyjlNeQxbkkTNmVFoQCqkmGrzLH6A9ecPlgTbp3wDTnUNqaUxYr4vlAcloxx8zwy7G5WdguYNg==
+  dependencies:
+    vscode-jsonrpc "8.0.2"
+    vscode-languageserver-types "3.17.2"
+
+vscode-languageserver-types@3.17.2:
+  version "3.17.2"
+  resolved "https://registry.yarnpkg.com/vscode-languageserver-types/-/vscode-languageserver-types-3.17.2.tgz#b2c2e7de405ad3d73a883e91989b850170ffc4f2"
+  integrity sha512-zHhCWatviizPIq9B7Vh9uvrH6x3sK8itC84HkamnBWoDFJtzBf7SWlpLCZUit72b3os45h6RWQNC9xHRDF8dRA==
 
 w3c-hr-time@^1.0.2:
   version "1.0.2"
