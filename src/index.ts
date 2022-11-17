@@ -174,14 +174,25 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     const testLine = lines.childNodes[line];
     console.log(testLine);
     const bundle = { 'text/plain':  block.message};
-    if (block.cell === 4) {
-      testLine.addEventListener('mouseenter', (event) => {  // mouseenter so that only execute once
-        console.log("enter event");
-        const tooltip = new Tooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
-        Widget.attach(tooltip, document.body);
-        console.log("finish event");
-      });
-    }
+    //if (block.cell === 4) {
+    testLine.addEventListener('mouseenter', (event) => {  // mouseenter so that only execute once
+      // console.log("enter event");
+      // const parent = notebookTracker.currentWidget;
+      // if (!parent) {
+      //   return;
+      // }
+      // const anchor = parent.content;
+      // const editor = anchor.activeCell?.editor;
+      // const rendermime = anchor.rendermime;
+      const tooltip = new Tooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
+      // if (!!editor && !!rendermime) {
+      //   const tooltip = new Tooltip({anchor, bundle, editor, rendermime});
+      //   Widget.attach(tooltip, document.body);
+      // }
+      Widget.attach(tooltip, document.body);
+      //console.log("finish event");
+    });
+    //}
   }
 }
 
