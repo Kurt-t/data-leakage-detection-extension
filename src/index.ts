@@ -21,8 +21,8 @@ import { NotebookPanel, INotebookModel, INotebookTracker } from '@jupyterlab/not
 import { CodeMirrorEditor } from '@jupyterlab/codemirror';
 import { Cell } from '@jupyterlab/cells';
 //import * as CodeMirror from 'codemirror';
-import { Tooltip } from '@jupyterlab/tooltip';
-import { Widget } from '@lumino/widgets';
+// import { Tooltip } from '@jupyterlab/tooltip';
+// import { Widget } from '@lumino/widgets';
 
 import { requestAPI } from './handler';
 //import { EditorTooltipManager, FreeTooltip } from './leakage_tooltip';
@@ -52,29 +52,38 @@ const underlineClass = {
   //title: 'Potential preprocessing leakage'  // set tooltips
 }
 
-const jumpButton = (notebookTracker: INotebookTracker) => {
+const tagMap = new Map();
+tagMap.set('train', "This train operation may have data leakage.");
+tagMap.set('test', "This test operation may have data leakage.");
+
+// create a button to jump to and highlight some lines
+const jumpButton = (notebookTracker: INotebookTracker, tagSource: any) => {
+  // tagSource is like: {'Tag': 'train-test', 'Source': [ {Line, Cell} ] }
   const button = document.createElement("button");
-  button.innerHTML = "Jump to leakage source";
+  button.innerHTML = tagSource.Tag;  // TODO: a map to assign value
   button.className = "leakage-button";
   button.onclick = function() {
     // jump to
-    const highlightMap = [
-      {cell: 4, loc: [{line: 5, ch: 0}]},
-      {cell: 5, loc: [{line: 0, ch: 0}]},
-      {cell: 5, loc: [{line: 1, ch: 0}]},
-    ]
+    // const highlightMap = [
+    //   {cell: 4, loc: [{line: 5, ch: 0}]},
+    //   {cell: 5, loc: [{line: 0, ch: 0}]},
+    //   {cell: 5, loc: [{line: 1, ch: 0}]},
+    // ]
     const notebook = notebookTracker.currentWidget!.content;
     notebook.deselectAll();
-    notebook.activeCellIndex = 4;
+    // select the first line
+    notebook.activeCellIndex = tagSource.Source[0].Cell;  // TODO: could be empty?
     notebook.mode = 'edit';
     let activeEditor = notebook.activeCell!.editor;
-    const len = activeEditor.getLine(5)!.length;
-    activeEditor.setSelection({start: {line: 5, column: len}, end: {line: 5, column: len}});
-    for (const block of highlightMap) {
-      const line = block.loc[0].line;
+    const firstLine = tagSource.Source[0].Line
+    const len = activeEditor.getLine(firstLine)!.length;
+    activeEditor.setSelection({start: {line: firstLine, column: len}, end: {line: firstLine, column: len}});
+    // highlight all lines
+    for (const loc of tagSource.Source) {
+      const line = loc.Line;
       const from = {line: line, ch: 0};
       const to = {line: line + 1, ch: 0};
-      const cell: Cell = notebook.widgets[block.cell];
+      const cell: Cell = notebook.widgets[loc.Cell];
       const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
       const doc = editor.doc;
       doc.markText(from, to, highlightClass);
@@ -87,38 +96,51 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
   if (!notebookTracker.currentWidget) {
     return;
   }
-  const message1 = "Some preprocessing before splitting the dataset might " + 
-    "lead to data leakage. Refer to: https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing";
-  const message2 = "A possible leakage of this train/test is detected";
-  if (!highlightMap) {
-    highlightMap = [
-      {cell: 4, loc: [{line: 5, ch: 0}], message: message1},
-      {cell: 5, loc: [{line: 0, ch: 0}], message: message1},
-      {cell: 5, loc: [{line: 1, ch: 0}], message: message1},
-      {cell: 10, loc: [{line: 2, ch: 0}], message: message2},
-      {cell: 10, loc: [{line: 3, ch: 0}], message: message2},
-    ];
-  }
+  // const message1 = "Some preprocessing before splitting the dataset might " + 
+  //   "lead to data leakage. Refer to: https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing";
+  // const message2 = "A possible leakage of this train/test is detected";
+  // if (!highlightMap) {
+  //   highlightMap = [
+  //     {cell: 4, loc: [{line: 5, ch: 0}], message: message1},
+  //     {cell: 5, loc: [{line: 0, ch: 0}], message: message1},
+  //     {cell: 5, loc: [{line: 1, ch: 0}], message: message1},
+  //     {cell: 10, loc: [{line: 2, ch: 0}], message: message2},
+  //     {cell: 10, loc: [{line: 3, ch: 0}], message: message2},
+  //   ];
+  // }
   for (const block of highlightMap) {
-    const line = block.loc[0].line;
+    // block is like: {'Location': {Line: , Cell:}, 'Label': 'train', 'Tags': [{'Tag': 'train-test', 'Source': [ {Line, Cell} ] }]}
+    console.log(block);
+    const line = block.Location.Line;
     const from = {line: line, ch: 0};
     const to = {line: line + 1, ch: 0};
     const notebook = notebookTracker.currentWidget.content;
-    const cell: Cell = notebook.widgets[block.cell];
+    const cell: Cell = notebook.widgets[block.Location.Cell];
     const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
+    
     const doc = editor.doc;
+    
     //TODO: cell.children: Widget
     //cell.inputArea.children
-    doc.markText(from, to, underlineClass);
+    doc.markText(from, to, underlineClass);  // problem
     const node = document.createElement("div");  // document
     const icon = node.appendChild(document.createElement("span"))
+    
     icon.innerHTML = "!";
     icon.className = "lint-error-icon";
-    node.appendChild(document.createTextNode(block.message));
-    node.className = "lint-error";
-    if (block.cell === 10) {
-      node.appendChild(jumpButton(notebookTracker));
+    let message = block.Label;
+    if (tagMap.has(block.Label)) {
+      message = tagMap.get(block.Label);
     }
+    node.appendChild(document.createTextNode(message));
+    node.className = "lint-error";
+    // add inline buttons/tags
+    for (const tag of block.Tags) {
+      node.appendChild(jumpButton(notebookTracker, tag));
+    }
+    // if (block.Location.Cell === 10) {
+    //   node.appendChild(jumpButton(notebookTracker));
+    // }
     doc.addLineWidget(line, node);
   }
 }
@@ -135,7 +157,8 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookT
     if (reply.ok) {
       // TODO: content in iframe not interactive
       // create highlightMap
-      highlight(notebookTracker, null);
+
+      highlight(notebookTracker, reply.report);
     }
     // TODO: if not ok
   } catch (reason) {
