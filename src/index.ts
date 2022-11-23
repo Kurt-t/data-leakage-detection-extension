@@ -27,49 +27,11 @@ import { Widget } from '@lumino/widgets';
 import { requestAPI } from './handler';
 //import { EditorTooltipManager, FreeTooltip } from './leakage_tooltip';
 
-// class NewTooltip extends Tooltip {
-//   constructor(options: Tooltip.IOptions) {
-//     super(options);
-//     this.hide();
-//   }
-
-//   handleEvent(event: Event): void {
-//     if (this.isDisposed) {
-//       return;
-//     }
-
-//     const { node } = this;
-//     const target = event.target as HTMLElement;
-
-//     switch (event.type) {
-//       case 'mouseover': {
-//         this.show();
-//         break;
-//       }
-//       case 'keydown': {
-//         // ESC or Backspace cancel anyways
-//         this.hide();
-//         break;
-//       }
-//       case 'mousedown': {
-//         if (node.contains(target)) {
-//           this.activate();
-//           return;
-//         }
-//         this.hide();
-//         break;
-//       }
-//       default:
-//         super.handleEvent(event);
-//         break;
-//     }
-//   }
-// }
 
 /**
  * The command IDs used by the server extension plugin.
  */
- namespace CommandIDs {
+namespace CommandIDs {
   export const get = 'server:get-file';
 }
 
@@ -146,10 +108,10 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
     const doc = editor.doc;
     //TODO: cell.children: Widget
-    cell.inputArea.children
+    //cell.inputArea.children
     doc.markText(from, to, underlineClass);
     const node = document.createElement("div");  // document
-    var icon = node.appendChild(document.createElement("span"))
+    const icon = node.appendChild(document.createElement("span"))
     icon.innerHTML = "!";
     icon.className = "lint-error-icon";
     node.appendChild(document.createTextNode(block.message));
@@ -157,42 +119,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     if (block.cell === 10) {
       node.appendChild(jumpButton(notebookTracker));
     }
-    //doc.addLineWidget(line, node);
-
-    //const bundle = { 'text/plain': "test string" };
-    //const tooltip = new NewTooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
-    //Widget.attach(tooltip, editor.host);
-    //editor.editor.addWidget(from, tooltip.node, true);
-    // if (block.cell === 4) {
-    //   const bundle = { 'text/plain': "test string test string\n" };
-    //   const tooltip = new Tooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
-    //   Widget.attach(tooltip, document.body);
-    // }
-    // Option: editor.editor.addLineClass
-    const lines = editor.host.getElementsByClassName("CodeMirror-code")[0];
-
-    const testLine = lines.childNodes[line];
-    console.log(testLine);
-    const bundle = { 'text/plain':  block.message};
-    //if (block.cell === 4) {
-    testLine.addEventListener('mouseenter', (event) => {  // mouseenter so that only execute once
-      // console.log("enter event");
-      // const parent = notebookTracker.currentWidget;
-      // if (!parent) {
-      //   return;
-      // }
-      // const anchor = parent.content;
-      // const editor = anchor.activeCell?.editor;
-      // const rendermime = anchor.rendermime;
-      const tooltip = new Tooltip({anchor: notebook, bundle, editor, rendermime: notebook.rendermime});
-      // if (!!editor && !!rendermime) {
-      //   const tooltip = new Tooltip({anchor, bundle, editor, rendermime});
-      //   Widget.attach(tooltip, document.body);
-      // }
-      Widget.attach(tooltip, document.body);
-      //console.log("finish event");
-    });
-    //}
+    doc.addLineWidget(line, node);
   }
 }
 
@@ -207,6 +134,7 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookT
     console.log(reply);
     if (reply.ok) {
       // TODO: content in iframe not interactive
+      // create highlightMap
       highlight(notebookTracker, null);
     }
     // TODO: if not ok
@@ -244,9 +172,9 @@ class ButtonExtension implements DocumentRegistry.IWidgetExtension<NotebookPanel
     };
     const button = new ToolbarButton({
       className: 'create-report-button',
-      label: 'Create Detection Report',
+      label: 'Analyze Data Leakage',
       onClick: createReport,
-      tooltip: 'Create Detection Report',
+      tooltip: 'Analyze data leakage for current notebook',
     });
 
     panel.toolbar.insertItem(10, 'createReport', button);

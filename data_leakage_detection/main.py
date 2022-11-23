@@ -151,22 +151,23 @@ def main(input_path):
     if configs.output_flag:
         print("Converting notebooks to html...")
         try:
-            to_html(input_path, fact_path, html_path, lineno_map)
+            result = to_html(input_path, fact_path, html_path, lineno_map)
         except:
             print("Conversion failed!")
             return "Failed to convert"
     
     print("Success!\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t".format(t[0]+t[1]+t[3]+t[4], t[2], t[5], sum(t)))
     # delete files
-    os.remove(ir_path)
-    os.remove(json_path)
-    shutil.rmtree(fact_path)
-    return t
+    # os.remove(ir_path)
+    # os.remove(json_path)
+    # shutil.rmtree(fact_path)
+    return result
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run analysis for a single file')
-    parser.add_argument('file', help='the python file to be analyzed')
-    parser.add_argument('-o', '--output-flag', help='output html file', action="store_true")
-    args = parser.parse_args()
-    configs.output_flag = args.output_flag
-    main(os.path.abspath(sys.argv[1]))
+    # parser = argparse.ArgumentParser(description='Run analysis for a single file')
+    # parser.add_argument('file', help='the python file to be analyzed')
+    # parser.add_argument('-o', '--output-flag', help='output html file', action="store_true")
+    # args = parser.parse_args()
+    # configs.output_flag = args.output_flag
+    # main(os.path.abspath(sys.argv[1]))
+    main("/Users/zf/Documents/cmu2022/project/playground/test/test.py")

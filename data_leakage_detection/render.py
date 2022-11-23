@@ -98,7 +98,7 @@ def translate_labels(label, invos, invo2lineno):
         return get_button("highlight train/test sites", onclick=f"highlight_lines([{allInvo_str}])")
     elif label == "test-train":
         return get_button("highlight train/test sites", onclick=f"highlight_lines([{allInvo_str}])")
-    elif label == "test_overlap":
+    elif label == "test_overlap":  # split might overlap
         if len(invos) > 0:
             return get_button("overlap with training data", WARN_STYLE) + ' ' + get_button("potential leak src", onclick=f"mark_leak_lines([{allInvo_str}])")
         return get_button("overlap with training data", WARN_STYLE)
@@ -108,7 +108,7 @@ def translate_labels(label, invos, invo2lineno):
         return get_button("potential preprocessing leakage", WARN_STYLE) + ' ' + wrap_in_link(get_button("show and go to first leak src", onclick=f"mark_leak_lines([{allInvo_str}])"), invo2lineno[invos[0]])
     elif label == "test_multiuse":
         return get_button("used multiple times", WARN_STYLE) + ' ' + get_button("highlight other usage", onclick=f"highlight_lines([{allInvo_str}])")
-    elif label == "validation":
+    elif label == "validation":  # recognized as validation
         return get_button(label, REMIND_STYLE)
     elif label == "no_test":
         return get_button("no independent test data", WARN_STYLE)
@@ -135,7 +135,7 @@ def read_fact(fact_path, filename):
 def load_info(fact_path, filename, labels, info, invos=()):
     df = read_fact(fact_path, filename)
     def append_info(row):
-        labels[row['invo']][(info, invos)] = None
+        labels[row['invo']][(info, invos)] = None  #
     df.apply(append_info, axis=1)
     return df
 
@@ -145,16 +145,32 @@ def to_html(input_path, fact_path, html_path, lineno_map):
     html = highlight(code, PythonLexer(), HtmlFormatter(full=True, linenos=True))
     html_lines = html.split('\n')
 
-    # locate code area
-    st = [i for i, line in enumerate(html_lines) if '<td class="code">' in line][0]
-    ed = [i for i, line in enumerate(html_lines) if '</pre>' in line][-1]
+    # print("########")
+    # for entry in html_lines:
+    #     print(entry)
+    # print("########")
+    print(html_lines[115])
+    print(html_lines[116])
+    print(html_lines[133])
+    print(html_lines[134])
 
+    # locate code area
+    st = [i for i, line in enumerate(html_lines) if '<td class="code">' in line][0]  # start of code area
+    ed = [i for i, line in enumerate(html_lines) if '</pre>' in line][-1]  # end of code area
+
+    print(st, ed)
+    # So st is the idx of first entry of html_lines with the code, ed is the idx of the last line + 1
     # add lineno tags
     for i in range(st+1, ed):
         # lineno = i - st + 3
-        html_lines[i] = f'<span id="{i-st+1}">' + html_lines[i] + '</span>'
+        html_lines[i] = f'<span id="{i-st+1}">' + html_lines[i] + '</span>'  # why i-st+1? id=2?
 
-    invo2lineno = {}
+    print(html_lines[115])
+    print(html_lines[116])
+    print(html_lines[133])
+    print(html_lines[134])
+    
+    invo2lineno = {}  # invocation to lineno. lineno seems to be 1-indiced, and is a str
     with open(os.path.join(fact_path, "InvokeLineno.facts")) as f:
         lines = f.readlines()
         for line in lines:
@@ -205,15 +221,33 @@ def to_html(input_path, fact_path, html_path, lineno_map):
         labels[row['invo']][("test_multiuse", sorted_invo(row['invo2'] + [row['invo']]))] = None
     multileaks1.groupby("invo")['invo2'].apply(list).reset_index().apply(append_info, axis=1)
 
-    # no test info
+    # no test info  # TODO: what is this
     load_info(fact_path, "NoTestData.csv", labels, "no_test")
 
     # print('\n'.join(html_lines))
 
+    result = []
     # adding buttons
-    for invo, tags in labels.items():
+    for invo, tags in labels.items():  # invo is str, tags is a dict
+        print(invo, tags)
+        cnt = 0
+        tmp = [int(invo2lineno[invo]), "", []]
         for (label, invos) in tags.keys():
+            # TODO: could the first tags.key be something else?
+            if cnt == 0:
+                tmp[1] = label
+            else:
+                # make invos from tuple to list?
+                lines = [int(invo2lineno[i]) for i in invos]
+                tmp[2].append({"Tag": label, "Source": lines})
+            cnt += 1
+            print('  ', label, invos)
             html_lines[invo_idx(invo)] +=  ' ' + translate_labels(label, invos, invo2lineno)
+        result.append({"Line": tmp[0], "Label": tmp[1], "Tags": tmp[2]})
+    print("###", result)
+    
+    # JSON would be like: [{Line: 0, Label: "", Tags: [{Label: "", Source: [line_no]}, ...]}, {Line: line_no, Label: ""}, ...]
+    # In Python: [(line_no, "", [ ("label", [line_no, ...] ), ... ]), ...]
 
     def invos2buttons(invos):
         return ' '.join([wrap_in_link(get_button(str(invo2lineno[invo])), str(invo2lineno[invo])) for invo in invos])
@@ -233,7 +267,12 @@ def to_html(input_path, fact_path, html_path, lineno_map):
             summary = summary.replace("#LOCMULTI",  "")
         return summary
 
+    # print("########")
+    # for entry in html_lines:
+    #     print(entry)
+    # print("########")
     html_lines.insert(0, script_code + gen_summary())
     html_lines[html_lines.index('pre { line-height: 125%; }')] = 'pre { line-height: 145%; }'
-    with open(html_path, "w") as f:
-        f.write('\n'.join(html_lines))
+    # with open(html_path, "w") as f:
+    #     f.write('\n'.join(html_lines))
+    return result
