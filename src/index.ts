@@ -56,8 +56,9 @@ const tagMap = new Map();
 tagMap.set('train', "This train operation may have data leakage.");
 tagMap.set('test', "This test operation may have data leakage.");
 
-// var marks = [];
-// var lineWidgets = [];
+var underlineMarks: any[] = [];
+var highlightMarks: any[] = [];  // TODO: TextMarker<MarkerRange>[]
+var warningLineWidgets: any[] = [];
 
 // create a button to mute a line's underline marker and line widget
 const muteButton = (marker: any, lineWidget: any) => {
@@ -67,6 +68,7 @@ const muteButton = (marker: any, lineWidget: any) => {
   button.onclick = function() {
     marker.clear();
     lineWidget.clear();
+    //marker.clear();  // can it be cleared twice?
   }
   return button;
 }
@@ -78,12 +80,6 @@ const jumpButton = (notebookTracker: INotebookTracker, tagSource: any) => {
   button.innerHTML = tagSource.Tag;  // TODO: a map to assign value
   button.className = "leakage-button";
   button.onclick = function() {
-    // jump to
-    // const highlightMap = [
-    //   {cell: 4, loc: [{line: 5, ch: 0}]},
-    //   {cell: 5, loc: [{line: 0, ch: 0}]},
-    //   {cell: 5, loc: [{line: 1, ch: 0}]},
-    // ]
     const notebook = notebookTracker.currentWidget!.content;
     notebook.deselectAll();
     // select the first line
@@ -101,7 +97,8 @@ const jumpButton = (notebookTracker: INotebookTracker, tagSource: any) => {
       const cell: Cell = notebook.widgets[loc.Cell];
       const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
       const doc = editor.doc;
-      doc.markText(from, to, highlightClass);
+      const marker = doc.markText(from, to, highlightClass);
+      highlightMarks.push(marker);
     }
   };
   return button;
@@ -114,15 +111,6 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
   // const message1 = "Some preprocessing before splitting the dataset might " + 
   //   "lead to data leakage. Refer to: https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing";
   // const message2 = "A possible leakage of this train/test is detected";
-  // if (!highlightMap) {
-  //   highlightMap = [
-  //     {cell: 4, loc: [{line: 5, ch: 0}], message: message1},
-  //     {cell: 5, loc: [{line: 0, ch: 0}], message: message1},
-  //     {cell: 5, loc: [{line: 1, ch: 0}], message: message1},
-  //     {cell: 10, loc: [{line: 2, ch: 0}], message: message2},
-  //     {cell: 10, loc: [{line: 3, ch: 0}], message: message2},
-  //   ];
-  // }
   for (const block of highlightMap) {
     // block is like: {'Location': {Line: , Cell:}, 'Label': 'train', 'Tags': [{'Tag': 'train-test', 'Source': [ {Line, Cell} ] }]}
     console.log(block);
@@ -137,7 +125,9 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     
     //TODO: cell.children: Widget
     //cell.inputArea.children
+    // underline marker
     const marker = doc.markText(from, to, underlineClass);  // problem
+    underlineMarks.push(marker);
     const node = document.createElement("div");  // document
     const icon = node.appendChild(document.createElement("span"))
     
@@ -157,6 +147,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     //   node.appendChild(jumpButton(notebookTracker));
     // }
     const lineWidget = doc.addLineWidget(line, node);
+    warningLineWidgets.push(lineWidget);
     // add a mute button
     node.append(muteButton(marker, lineWidget));
   }
@@ -187,7 +178,7 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookT
 }
 
 // reference: TODO
-class ButtonExtension implements DocumentRegistry.IWidgetExtension<NotebookPanel, INotebookModel>
+class AnalyzeMenuButton implements DocumentRegistry.IWidgetExtension<NotebookPanel, INotebookModel>
 {
   shell: JupyterFrontEnd.IShell
   notebookTracker: INotebookTracker
@@ -219,6 +210,48 @@ class ButtonExtension implements DocumentRegistry.IWidgetExtension<NotebookPanel
 
     panel.toolbar.insertItem(10, 'createReport', button);
     return new DisposableDelegate(() => {
+      button.dispose();
+    });
+  }
+}
+
+class MuteMenuButton implements DocumentRegistry.IWidgetExtension<NotebookPanel, INotebookModel>
+{
+  /**
+   * Create a new extension for the notebook panel widget.
+   *
+   * @param panel Notebook panel
+   * @param context Notebook context
+   * @returns Disposable on the added button
+   */
+  createNew(
+    panel: NotebookPanel,
+    context: DocumentRegistry.IContext<INotebookModel>
+  ): IDisposable {
+    const muteAll = () => {
+      for (const highlightMark of highlightMarks) {
+        highlightMark.clear();
+      }
+      highlightMarks = [];  // empty it
+      for (const underlineMark of underlineMarks) {
+        underlineMark.clear();
+      }
+      underlineMarks = [];  // empty it
+      for (const warningLineWidget of warningLineWidgets) {
+        warningLineWidget.clear();
+      }
+      warningLineWidgets = [];  // empty it
+    };
+    const button = new ToolbarButton({
+      className: 'mute-menu-button',
+      label: 'Mute All',
+      onClick: muteAll,
+      tooltip: 'Mute all highlights and warnings',
+    });
+
+    panel.toolbar.insertItem(11, 'muteReport', button);
+    return new DisposableDelegate(() => {
+      // TODO: what is the dispose method for a widget?
       button.dispose();
     });
   }
@@ -263,7 +296,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     palette.addItem({ command, category: category });
 
-    app.docRegistry.addWidgetExtension('Notebook', new ButtonExtension(shell, notebookTracker));
+    app.docRegistry.addWidgetExtension('Notebook', new AnalyzeMenuButton(shell, notebookTracker));
+    app.docRegistry.addWidgetExtension('Notebook', new MuteMenuButton());
   },
 };
 
