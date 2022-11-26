@@ -31,3 +31,15 @@
 .leakage-button:hover {
     background-color: #a00;
 }
+
+.mute-button {
+    line-height: 85%;
+    background-color: blue;
+    color: white;
+    border: none;
+    margin-left: 5px;
+}
+
+.mute-button:hover {
+    background-color: rgb(16, 12, 91);
+}

@@ -56,6 +56,21 @@ const tagMap = new Map();
 tagMap.set('train', "This train operation may have data leakage.");
 tagMap.set('test', "This test operation may have data leakage.");
 
+// var marks = [];
+// var lineWidgets = [];
+
+// create a button to mute a line's underline marker and line widget
+const muteButton = (marker: any, lineWidget: any) => {
+  const button = document.createElement("button");
+  button.innerHTML = "mute";
+  button.className = "mute-button";
+  button.onclick = function() {
+    marker.clear();
+    lineWidget.clear();
+  }
+  return button;
+}
+
 // create a button to jump to and highlight some lines
 const jumpButton = (notebookTracker: INotebookTracker, tagSource: any) => {
   // tagSource is like: {'Tag': 'train-test', 'Source': [ {Line, Cell} ] }
@@ -122,7 +137,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     
     //TODO: cell.children: Widget
     //cell.inputArea.children
-    doc.markText(from, to, underlineClass);  // problem
+    const marker = doc.markText(from, to, underlineClass);  // problem
     const node = document.createElement("div");  // document
     const icon = node.appendChild(document.createElement("span"))
     
@@ -141,7 +156,9 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     // if (block.Location.Cell === 10) {
     //   node.appendChild(jumpButton(notebookTracker));
     // }
-    doc.addLineWidget(line, node);
+    const lineWidget = doc.addLineWidget(line, node);
+    // add a mute button
+    node.append(muteButton(marker, lineWidget));
   }
 }
 
