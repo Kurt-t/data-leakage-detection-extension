@@ -55,6 +55,7 @@ const underlineClass = {
 const tagMap = new Map();
 tagMap.set('train', "This train operation may have data leakage.");
 tagMap.set('test', "This test operation may have data leakage.");
+tagMap.set('preprocessing_leak', "This operation causes a preprocessing leakage."); // TODO: make the value a html node
 
 var underlineMarks: any[] = [];
 var highlightMarks: any[] = [];  // TODO: TextMarker<MarkerRange>[]
@@ -71,6 +72,22 @@ const muteButton = (marker: any, lineWidget: any) => {
     //marker.clear();  // can it be cleared twice?
   }
   return button;
+}
+
+// function to clear all marks
+const muteAll = () => {
+  for (const highlightMark of highlightMarks) {
+    highlightMark.clear();
+  }
+  highlightMarks = [];  // empty it
+  for (const underlineMark of underlineMarks) {
+    underlineMark.clear();
+  }
+  underlineMarks = [];  // empty it
+  for (const warningLineWidget of warningLineWidgets) {
+    warningLineWidget.clear();
+  }
+  warningLineWidgets = [];  // empty it
 }
 
 // create a button to jump to and highlight some lines
@@ -113,7 +130,6 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
   // const message2 = "A possible leakage of this train/test is detected";
   for (const block of highlightMap) {
     // block is like: {'Location': {Line: , Cell:}, 'Label': 'train', 'Tags': [{'Tag': 'train-test', 'Source': [ {Line, Cell} ] }]}
-    console.log(block);
     const line = block.Location.Line;
     const from = {line: line, ch: 0};
     const to = {line: line + 1, ch: 0};
@@ -142,6 +158,28 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     // add inline buttons/tags
     for (const tag of block.Tags) {
       node.appendChild(jumpButton(notebookTracker, tag));
+      // TODO: underline the source lines as well
+      if (tagMap.has(tag.Tag)) {
+        for (const source of tag.Source) {
+          const line = source.Line;
+          const from = {line: line, ch: 0};
+          const to = {line: line + 1, ch: 0};
+          const cell: Cell = notebook.widgets[source.Cell];
+          const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
+          const doc = editor.doc;
+          const marker = doc.markText(from, to, underlineClass);
+          underlineMarks.push(marker);
+          const node = document.createElement("div");  // document
+          const icon = node.appendChild(document.createElement("span"))
+          icon.innerHTML = "!";
+          icon.className = "lint-error-icon";
+          node.appendChild(document.createTextNode(tagMap.get(tag.Tag)));
+          node.className = "lint-error";
+          const lineWidget = doc.addLineWidget(line, node);
+          warningLineWidgets.push(lineWidget);
+          node.append(muteButton(marker, lineWidget));
+        }
+      }
     }
     // if (block.Location.Cell === 10) {
     //   node.appendChild(jumpButton(notebookTracker));
@@ -156,6 +194,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
 const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker) => {
   // POST request
   const dataToSend = { name: filename };
+  muteAll();
   try {
     const reply = await requestAPI<any>('detect', {
       body: JSON.stringify(dataToSend),
@@ -228,20 +267,6 @@ class MuteMenuButton implements DocumentRegistry.IWidgetExtension<NotebookPanel,
     panel: NotebookPanel,
     context: DocumentRegistry.IContext<INotebookModel>
   ): IDisposable {
-    const muteAll = () => {
-      for (const highlightMark of highlightMarks) {
-        highlightMark.clear();
-      }
-      highlightMarks = [];  // empty it
-      for (const underlineMark of underlineMarks) {
-        underlineMark.clear();
-      }
-      underlineMarks = [];  // empty it
-      for (const warningLineWidget of warningLineWidgets) {
-        warningLineWidget.clear();
-      }
-      warningLineWidgets = [];  // empty it
-    };
     const button = new ToolbarButton({
       className: 'mute-menu-button',
       label: 'Mute All',
