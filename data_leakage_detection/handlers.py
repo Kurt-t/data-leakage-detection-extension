@@ -30,6 +30,60 @@ class RouteHandler(APIHandler):
             analysis_path = os.path.join(os.getcwd(), file_prefix) + '.py'
         result = main(analysis_path)
 
+        # first go through warning suppression layer:
+        # better not delete item while iterating
+        def suppress_warnings(report, file_path):
+            lines = []
+            with open(file_path) as file:
+                for line in file:
+                    lines.append(line.rstrip())
+            suppressed_lines = set()
+            for i in range(len(lines)):
+                if "@suppressLeakWarning" in lines[i]:
+                    suppressed_lines.add(i)
+            entry_to_mute = set()  # entry.Line values to delete
+            line2other = dict()
+            line2entry = dict()
+            for entry in report:
+                line2entry[entry['Line']] = entry
+                tmp = entry['Tags'][0]['Source']  # assume first tag must be train-test/test-train
+                line2other[tmp[0]] = tmp[1]
+                line2other[tmp[1]] = tmp[0]
+            for entry in report:
+                # entry is like: {'Line': 18, 'Label': 'train', 'Tags': [{'Tag': 'train-test', 'Source': [18, 19]}]}
+                if entry['Line'] - 1 in suppressed_lines:
+                    entry_to_mute.add(entry['Line'])
+                    # set the corresponding other train/test entry to suppressed
+                    entry_to_mute.add(line2other[entry['Line']])
+                else:  # look into its sources
+                    # delete suppressed sources
+                    new_tags = []
+                    for tag in entry['Tags']:
+                        if tag['Tag'] != 'train-test' and tag['Tag'] != 'test-train':
+                            new_sources = []
+                            for source in tag['Source']:
+                                if source - 1 in suppressed_lines:
+                                    continue
+                                new_sources.append(source)
+                            if len(new_sources) != 0:
+                                tag['Source'] = new_sources
+                                new_tags.append(tag)
+                        else:
+                            new_tags.append(tag)
+                    entry['Tags'] = new_tags
+                    # mark the pair if no extra source for both
+                    if len(new_tags) < 2 and len(line2entry[line2other[entry['Line']]]['Tags']) < 2:
+                        # get the other entry of this pair
+                        entry_to_mute.add(entry['Line'])
+                        entry_to_mute.add(line2other[entry['Line']])
+            # end for entry in report
+            new_report = []
+            for entry in report:
+                if entry['Line'] not in entry_to_mute:
+                    new_report.append(entry)
+                                
+            return new_report
+
         def ipynb_line_transform(report, file_path):  # transform 1-indiced line_no to cell_no and line_no
             lines = []
             with open(file_path) as file:
@@ -39,7 +93,7 @@ class RouteHandler(APIHandler):
             splits = []
             for i in range(len(lines)):
                 if lines[i][:5] == "# In[" and i + 2 < len(lines) and\
-                lines[i + 1] == "" and lines[i + 2] == "":
+                lines[i + 1] == "" and lines[i + 2] == "":  # '\n' has been stripped
                     splits.append(i + 1)  # 1-indiced
             for entry in report:
                 # entry is like: {'Line': 18, 'Label': 'train', 'Tags': [{'Tag': 'train-test', 'Source': [18, 19]}]}
@@ -56,16 +110,17 @@ class RouteHandler(APIHandler):
                         cell, line = line2cell(splits, source)
                         sources.append({'Cell': cell, 'Line': line})
                     tag['Source'] = sources
-            return report, splits
+            return report
 
         data = {'ok': False, 'report': [], 'log': ''}
         if not isinstance(result, str):  # if no error
             #report_file_name = file_prefix + '.html'
+            result = suppress_warnings(result, analysis_path)
             if file_suffix == '.ipynb':
-                result, splits = ipynb_line_transform(result, analysis_path)
+                result = ipynb_line_transform(result, analysis_path)
             data['ok'] = True
             data['report'] = result
-            data['log'] = splits
+            data['log'] = ""
             # if file_suffix == '.ipynb':
             #     os.remove(analysis_path)
         self.finish(json.dumps(data))

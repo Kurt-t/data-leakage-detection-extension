@@ -229,7 +229,7 @@ def to_html(input_path, fact_path, html_path, lineno_map):
     result = []
     # adding buttons
     for invo, tags in labels.items():  # invo is str, tags is a dict
-        print(invo, tags)
+        print(invo, tags)  # $invo12; {('train', ()): None, ('train-test', ('$invo12', '$invo13')): None}
         cnt = 0
         tmp = [int(invo2lineno[invo]), "", []]
         for (label, invos) in tags.keys():

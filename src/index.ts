@@ -76,20 +76,20 @@ const muteButton = (doc: CodeMirror.Doc, line: number, marker: any, lineWidget: 
     marker.clear();
     lineWidget.clear();
     //marker.clear();  // can it be cleared twice?
-    // add @suppressLeakDetection to the end of the line
+    // add @suppressLeakWarning to the end of the line
     //const content = doc.getValue();
     //doc.setLine(line, content);  // TODO: setLine not found
     //console.log(content);
     //const lines = content.split('\n');
     //console.log(lines);
-    //lines[line] = lines[line] + "  # @suppressLeakDetection";
+    //lines[line] = lines[line] + "  # @suppressLeakWarning";
     //doc.setValue(lines.join('\n'));
     //doc.getLineHandle(line).text = lines[line]; doesn't work
     //console.log(doc.setLine);
     //console.log(doc);
     // console.log(doc.getEditor()!.setLine); also undefined
     const content = doc.getLine(line);
-    doc.replaceRange(content + "  # @suppressLeakDetection", {line: line, ch: 0}, {line: line, ch: content.length});
+    doc.replaceRange(content + "  # @suppressLeakWarning", {line: line, ch: 0}, {line: line, ch: content.length});
   }
   return button;
 }
