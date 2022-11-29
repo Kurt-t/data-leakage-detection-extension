@@ -20,7 +20,7 @@ import { NotebookPanel, INotebookModel, INotebookTracker } from '@jupyterlab/not
 
 import { CodeMirrorEditor } from '@jupyterlab/codemirror';
 import { Cell } from '@jupyterlab/cells';
-//import * as CodeMirror from 'codemirror';
+import * as CodeMirror from 'codemirror';
 // import { Tooltip } from '@jupyterlab/tooltip';
 // import { Widget } from '@lumino/widgets';
 
@@ -52,9 +52,15 @@ const underlineClass = {
   //title: 'Potential preprocessing leakage'  // set tooltips
 }
 
+// TODO: 1. tag -> button content; 2. tag -> warning; 3. tag -> source line warning
 const tagMap = new Map();
 tagMap.set('train', "This train operation may have data leakage.");
 tagMap.set('test', "This test operation may have data leakage.");
+tagMap.set('test_overlap', "overlap with training data");
+tagMap.set('train_overlap', "overlap with all test data");
+tagMap.set('test_multiuse', "used multiple times");
+tagMap.set('validation', "validation");
+tagMap.set('no_test', "no independent test data");
 tagMap.set('preprocessing_leak', "This operation causes a preprocessing leakage."); // TODO: make the value a html node
 
 var underlineMarks: any[] = [];
@@ -62,7 +68,7 @@ var highlightMarks: any[] = [];  // TODO: TextMarker<MarkerRange>[]
 var warningLineWidgets: any[] = [];
 
 // create a button to mute a line's underline marker and line widget
-const muteButton = (marker: any, lineWidget: any) => {
+const muteButton = (doc: CodeMirror.Doc, line: number, marker: any, lineWidget: any) => {
   const button = document.createElement("button");
   button.innerHTML = "mute";
   button.className = "mute-button";
@@ -70,6 +76,20 @@ const muteButton = (marker: any, lineWidget: any) => {
     marker.clear();
     lineWidget.clear();
     //marker.clear();  // can it be cleared twice?
+    // add @suppressLeakDetection to the end of the line
+    //const content = doc.getValue();
+    //doc.setLine(line, content);  // TODO: setLine not found
+    //console.log(content);
+    //const lines = content.split('\n');
+    //console.log(lines);
+    //lines[line] = lines[line] + "  # @suppressLeakDetection";
+    //doc.setValue(lines.join('\n'));
+    //doc.getLineHandle(line).text = lines[line]; doesn't work
+    //console.log(doc.setLine);
+    //console.log(doc);
+    // console.log(doc.getEditor()!.setLine); also undefined
+    const content = doc.getLine(line);
+    doc.replaceRange(content + "  # @suppressLeakDetection", {line: line, ch: 0}, {line: line, ch: content.length});
   }
   return button;
 }
@@ -134,8 +154,16 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     const from = {line: line, ch: 0};
     const to = {line: line + 1, ch: 0};
     const notebook = notebookTracker.currentWidget.content;
+    //notebook.selectionChanged.connect()
     const cell: Cell = notebook.widgets[block.Location.Cell];
     const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
+    //editor.editor.on('blur', () => console.log('blur'));
+    // editor.editor.on('focus', () => console.log('focus'));
+    // editor.editor.on('cursorActivity', () => console.log('cursorActivity'));
+    // conclusion: 1. when this editor loses focus, 'blur' is triggered
+    // 2. when the editor is focused again, 'focus' is triggered (single click)
+    // 3. when a blurred editor is clicked twice, both 'focus' and 'cursorActivity' are triggered
+    // 4. changing the cursor position within this editor triggers 'cursorActivity'
     
     const doc = editor.doc;
     
@@ -163,10 +191,11 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
         for (const source of tag.Source) {
           const line = source.Line;
           const from = {line: line, ch: 0};
-          const to = {line: line + 1, ch: 0};
           const cell: Cell = notebook.widgets[source.Cell];
           const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
           const doc = editor.doc;
+          const len = doc.getLine(line).length;
+          const to = {line: line, ch: len};
           const marker = doc.markText(from, to, underlineClass);
           underlineMarks.push(marker);
           const node = document.createElement("div");  // document
@@ -177,7 +206,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
           node.className = "lint-error";
           const lineWidget = doc.addLineWidget(line, node);
           warningLineWidgets.push(lineWidget);
-          node.append(muteButton(marker, lineWidget));
+          node.append(muteButton(doc, line, marker, lineWidget));
         }
       }
     }
@@ -187,7 +216,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     const lineWidget = doc.addLineWidget(line, node);
     warningLineWidgets.push(lineWidget);
     // add a mute button
-    node.append(muteButton(marker, lineWidget));
+    node.append(muteButton(doc, line, marker, lineWidget));
   }
 }
 
