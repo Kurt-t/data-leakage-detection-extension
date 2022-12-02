@@ -22,7 +22,13 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
 ]
 dependencies = [
-    "jupyter_server>=1.6,<2"
+    "jupyter_server>=1.6,<2",
+    "astunparse==1.6.3",
+    "Pygments==2.10.0",
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "imblearn"
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 

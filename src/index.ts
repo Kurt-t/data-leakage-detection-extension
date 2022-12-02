@@ -53,15 +53,23 @@ const underlineClass = {
 }
 
 // TODO: 1. tag -> button content; 2. tag -> warning; 3. tag -> source line warning
-const tagMap = new Map();
-tagMap.set('train', "This train operation may have data leakage.");
-tagMap.set('test', "This test operation may have data leakage.");
-tagMap.set('test_overlap', "overlap with training data");
-tagMap.set('train_overlap', "overlap with all test data");
-tagMap.set('test_multiuse', "used multiple times");
-tagMap.set('validation', "validation");
-tagMap.set('no_test', "no independent test data");
-tagMap.set('preprocessing_leak', "This operation causes a preprocessing leakage."); // TODO: make the value a html node
+const tag2Button = new Map<string, string>();
+tag2Button.set('train-test', "highlight train/test sites");
+tag2Button.set('test-train', "highlight train/test sites");
+tag2Button.set('preprocessing_leak', "preprocessing leakage");
+tag2Button.set('test_overlap', "overlap with training data");
+tag2Button.set('train_overlap', "overlap with test data");
+tag2Button.set('test_multiuse', "used multiple times");
+tag2Button.set('no_test', "no independent test data");
+//tag2Button.set('validation', "validation");
+
+const tag2Warning = new Map();
+tag2Warning.set('train', document.createTextNode("This train operation may have data leakage."));
+tag2Warning.set('test', document.createTextNode("This test operation may have data leakage."));
+tag2Warning.set('test_overlap', "This operation may result in an overlap with training data");
+tag2Warning.set('train_overlap', "This operation may result in an overlap with test data");
+tag2Warning.set('test_multiuse', "This test dataset may be used multiple times");
+tag2Warning.set('preprocessing_leak', "This operation may cause a preprocessing leakage. See: <a href='https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
 
 var underlineMarks: any[] = [];
 var highlightMarks: any[] = [];  // TODO: TextMarker<MarkerRange>[]
@@ -75,19 +83,6 @@ const muteButton = (doc: CodeMirror.Doc, line: number, marker: any, lineWidget: 
   button.onclick = function() {
     marker.clear();
     lineWidget.clear();
-    //marker.clear();  // can it be cleared twice?
-    // add @suppressLeakWarning to the end of the line
-    //const content = doc.getValue();
-    //doc.setLine(line, content);  // TODO: setLine not found
-    //console.log(content);
-    //const lines = content.split('\n');
-    //console.log(lines);
-    //lines[line] = lines[line] + "  # @suppressLeakWarning";
-    //doc.setValue(lines.join('\n'));
-    //doc.getLineHandle(line).text = lines[line]; doesn't work
-    //console.log(doc.setLine);
-    //console.log(doc);
-    // console.log(doc.getEditor()!.setLine); also undefined
     const content = doc.getLine(line);
     doc.replaceRange(content + "  # @suppressLeakWarning", {line: line, ch: 0}, {line: line, ch: content.length});
   }
@@ -115,6 +110,9 @@ const jumpButton = (notebookTracker: INotebookTracker, tagSource: any) => {
   // tagSource is like: {'Tag': 'train-test', 'Source': [ {Line, Cell} ] }
   const button = document.createElement("button");
   button.innerHTML = tagSource.Tag;  // TODO: a map to assign value
+  if (tag2Button.has(tagSource.Tag)) {
+    button.innerHTML = tag2Button.get(tagSource.Tag)!;
+  }
   button.className = "leakage-button";
   button.onclick = function() {
     const notebook = notebookTracker.currentWidget!.content;
@@ -178,16 +176,16 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     icon.innerHTML = "!";
     icon.className = "lint-error-icon";
     let message = block.Label;
-    if (tagMap.has(block.Label)) {
-      message = tagMap.get(block.Label);
+    if (tag2Warning.has(block.Label)) {
+      message = tag2Warning.get(block.Label);
     }
-    node.appendChild(document.createTextNode(message));
+    node.appendChild(message);
     node.className = "lint-error";
     // add inline buttons/tags
     for (const tag of block.Tags) {
       node.appendChild(jumpButton(notebookTracker, tag));
       // TODO: underline the source lines as well
-      if (tagMap.has(tag.Tag)) {
+      if (tag2Warning.has(tag.Tag)) {
         for (const source of tag.Source) {
           const line = source.Line;
           const from = {line: line, ch: 0};
@@ -202,7 +200,11 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
           const icon = node.appendChild(document.createElement("span"))
           icon.innerHTML = "!";
           icon.className = "lint-error-icon";
-          node.appendChild(document.createTextNode(tagMap.get(tag.Tag)));
+          //node.appendChild(tag2Warning.get(tag.Tag));
+          var p = document.createElement('p');
+          p.setAttribute("style", "display: inline");
+          p.innerHTML = tag2Warning.get(tag.Tag);
+          node.appendChild(p);
           node.className = "lint-error";
           const lineWidget = doc.addLineWidget(line, node);
           warningLineWidgets.push(lineWidget);
