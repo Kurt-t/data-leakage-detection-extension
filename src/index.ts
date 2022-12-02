@@ -147,9 +147,9 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
   if (!notebookTracker.currentWidget) {
     return;
   }
-  // const message1 = "Some preprocessing before splitting the dataset might " + 
-  //   "lead to data leakage. Refer to: https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing";
-  // const message2 = "A possible leakage of this train/test is detected";
+
+  // to prevent multiple same warnings per line:
+  const existWarns: Set<String> = new Set();
   for (const block of highlightMap) {
     // block is like: {'Location': {Line: , Cell:}, 'Label': 'train', 'Tags': [{'Tag': 'train-test', 'Source': [ {Line, Cell} ] }]}
     const line = block.Location.Line;
@@ -191,6 +191,9 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
       // TODO: underline the source lines as well
       if (tag2Warning.has(tag.Tag)) {
         for (const source of tag.Source) {
+          if (existWarns.has(JSON.stringify(source))) {
+            continue;
+          }
           const line = source.Line;
           const from = {line: line, ch: 0};
           const cell: Cell = notebook.widgets[source.Cell];
@@ -211,6 +214,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
           node.appendChild(p);
           node.className = "lint-error";
           const lineWidget = doc.addLineWidget(line, node);
+          existWarns.add(JSON.stringify(source));
           warningLineWidgets.push(lineWidget);
           node.append(muteButton(doc, line, marker, lineWidget));
         }
