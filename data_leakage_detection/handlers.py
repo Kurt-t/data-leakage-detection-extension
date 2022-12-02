@@ -30,6 +30,7 @@ class RouteHandler(APIHandler):
             analysis_path = os.path.join(os.getcwd(), file_prefix) + '.py'
         result = main(analysis_path)
 
+        # [{'Line': 78, 'Label': 'train', 'Tags': [{'Tag': 'no_test', 'Source': []}]}]
         # first go through warning suppression layer:
         # better not delete item while iterating
         def suppress_warnings(report, file_path):
@@ -46,15 +47,17 @@ class RouteHandler(APIHandler):
             line2entry = dict()
             for entry in report:
                 line2entry[entry['Line']] = entry
-                tmp = entry['Tags'][0]['Source']  # assume first tag must be train-test/test-train
-                line2other[tmp[0]] = tmp[1]
-                line2other[tmp[1]] = tmp[0]
+                for tag in entry['Tags']:
+                    if tag['Tag'] == 'train-test' or tag['Tag'] == 'test-train':
+                        line2other[tag['Source'][0]] = tag['Source'][1]
+                        line2other[tag['Source'][1]] = tag['Source'][0]
             for entry in report:
                 # entry is like: {'Line': 18, 'Label': 'train', 'Tags': [{'Tag': 'train-test', 'Source': [18, 19]}]}
                 if entry['Line'] - 1 in suppressed_lines:
                     entry_to_mute.add(entry['Line'])
-                    # set the corresponding other train/test entry to suppressed
-                    entry_to_mute.add(line2other[entry['Line']])
+                    # set the corresponding other train/test entry to suppressed, if exists
+                    if entry['Line'] in line2other:
+                        entry_to_mute.add(line2other[entry['Line']])
                 else:  # look into its sources
                     # delete suppressed sources
                     new_tags = []
@@ -65,14 +68,14 @@ class RouteHandler(APIHandler):
                                 if source - 1 in suppressed_lines:
                                     continue
                                 new_sources.append(source)
-                            if len(new_sources) != 0:
+                            if len(new_sources) != 0 or len(tag['Source']) == 0:  # for those originally with empty source: {'Tag': 'no_test', 'Source': []}
                                 tag['Source'] = new_sources
                                 new_tags.append(tag)
                         else:
                             new_tags.append(tag)
                     entry['Tags'] = new_tags
                     # mark the pair if no extra source for both
-                    if len(new_tags) < 2 and len(line2entry[line2other[entry['Line']]]['Tags']) < 2:
+                    if len(new_tags) < 2 and entry['Line'] in line2other and len(line2entry[line2other[entry['Line']]]['Tags']) < 2:
                         # get the other entry of this pair
                         entry_to_mute.add(entry['Line'])
                         entry_to_mute.add(line2other[entry['Line']])

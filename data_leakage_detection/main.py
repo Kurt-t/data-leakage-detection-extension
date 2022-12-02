@@ -158,9 +158,9 @@ def main(input_path):
     
     print("Success!\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t".format(t[0]+t[1]+t[3]+t[4], t[2], t[5], sum(t)))
     # delete files
-    # os.remove(ir_path)
-    # os.remove(json_path)
-    # shutil.rmtree(fact_path)
+    os.remove(ir_path)
+    os.remove(json_path)
+    shutil.rmtree(fact_path)
     return result
 
 if __name__ == "__main__":
@@ -170,4 +170,4 @@ if __name__ == "__main__":
     # args = parser.parse_args()
     # configs.output_flag = args.output_flag
     # main(os.path.abspath(sys.argv[1]))
-    main("/Users/zf/Documents/cmu2022/project/playground/test/test.py")
+    main("/Users/zf/Documents/cmu2022/project/playground/test/no_ind_test.py")

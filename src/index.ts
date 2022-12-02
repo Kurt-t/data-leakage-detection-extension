@@ -59,16 +59,17 @@ tag2Button.set('test-train', "highlight train/test sites");
 tag2Button.set('preprocessing_leak', "preprocessing leakage");
 tag2Button.set('test_overlap', "overlap with training data");
 tag2Button.set('train_overlap', "overlap with test data");
-tag2Button.set('test_multiuse', "used multiple times");
-tag2Button.set('no_test', "no independent test data");
+tag2Button.set('test_multiuse', "test used multiple times");
+tag2Button.set('no_test', "no independent test data");  // TODO: not a button, but a label
 //tag2Button.set('validation', "validation");
 
 const tag2Warning = new Map();
-tag2Warning.set('train', document.createTextNode("This train operation may have data leakage."));
-tag2Warning.set('test', document.createTextNode("This test operation may have data leakage."));
-tag2Warning.set('test_overlap', "This operation may result in an overlap with training data");
-tag2Warning.set('train_overlap', "This operation may result in an overlap with test data");
-tag2Warning.set('test_multiuse', "This test dataset may be used multiple times");
+tag2Warning.set('train', "This train operation may have data leakage.");  // Bug here: created an sole reference
+tag2Warning.set('test', "This test operation may have data leakage.");
+// Tags:
+tag2Warning.set('test_overlap', "This operation may result in an overlap with training data. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
+tag2Warning.set('train_overlap', "This operation may result in an overlap with test data. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
+//tag2Warning.set('test_multiuse', "This test dataset may be used multiple times, which can no longer be considered as unseen. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");  // TODO: lead to multi-warnings
 tag2Warning.set('preprocessing_leak', "This operation may cause a preprocessing leakage. See: <a href='https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
 
 var underlineMarks: any[] = [];
@@ -114,28 +115,30 @@ const jumpButton = (notebookTracker: INotebookTracker, tagSource: any) => {
     button.innerHTML = tag2Button.get(tagSource.Tag)!;
   }
   button.className = "leakage-button";
-  button.onclick = function() {
-    const notebook = notebookTracker.currentWidget!.content;
-    notebook.deselectAll();
-    // select the first line
-    notebook.activeCellIndex = tagSource.Source[0].Cell;  // TODO: could be empty?
-    notebook.mode = 'edit';
-    let activeEditor = notebook.activeCell!.editor;
-    const firstLine = tagSource.Source[0].Line
-    const len = activeEditor.getLine(firstLine)!.length;
-    activeEditor.setSelection({start: {line: firstLine, column: len}, end: {line: firstLine, column: len}});
-    // highlight all lines
-    for (const loc of tagSource.Source) {
-      const line = loc.Line;
-      const from = {line: line, ch: 0};
-      const to = {line: line + 1, ch: 0};
-      const cell: Cell = notebook.widgets[loc.Cell];
-      const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
-      const doc = editor.doc;
-      const marker = doc.markText(from, to, highlightClass);
-      highlightMarks.push(marker);
-    }
-  };
+  if (tagSource.Source.length !== 0) {
+    button.onclick = function() {
+      const notebook = notebookTracker.currentWidget!.content;
+      notebook.deselectAll();
+      // select the first line
+      notebook.activeCellIndex = tagSource.Source[0].Cell;
+      notebook.mode = 'edit';
+      let activeEditor = notebook.activeCell!.editor;
+      const firstLine = tagSource.Source[0].Line
+      const len = activeEditor.getLine(firstLine)!.length;
+      activeEditor.setSelection({start: {line: firstLine, column: len}, end: {line: firstLine, column: len}});
+      // highlight all lines
+      for (const loc of tagSource.Source) {
+        const line = loc.Line;
+        const from = {line: line, ch: 0};
+        const to = {line: line + 1, ch: 0};
+        const cell: Cell = notebook.widgets[loc.Cell];
+        const editor: CodeMirrorEditor = cell.inputArea.editorWidget.editor as CodeMirrorEditor;
+        const doc = editor.doc;
+        const marker = doc.markText(from, to, highlightClass);
+        highlightMarks.push(marker);
+      }
+    };
+  }
   return button;
 }
 
@@ -179,7 +182,7 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
     if (tag2Warning.has(block.Label)) {
       message = tag2Warning.get(block.Label);
     }
-    node.appendChild(message);
+    node.appendChild(document.createTextNode(message));
     node.className = "lint-error";
     // add inline buttons/tags
     for (const tag of block.Tags) {
