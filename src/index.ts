@@ -17,12 +17,13 @@ import { CommandRegistry } from '@lumino/commands';
 import { DocumentRegistry } from '@jupyterlab/docregistry';
 
 import { NotebookPanel, INotebookModel, INotebookTracker } from '@jupyterlab/notebook';
+import { IStatusBar } from '@jupyterlab/statusbar';
 
 import { CodeMirrorEditor } from '@jupyterlab/codemirror';
 import { Cell } from '@jupyterlab/cells';
 import * as CodeMirror from 'codemirror';
 // import { Tooltip } from '@jupyterlab/tooltip';
-// import { Widget } from '@lumino/widgets';
+import { Widget } from '@lumino/widgets';
 
 import { requestAPI } from './handler';
 //import { EditorTooltipManager, FreeTooltip } from './leakage_tooltip';
@@ -67,8 +68,8 @@ const tag2Warning = new Map();
 tag2Warning.set('train', "This train operation may have data leakage.");  // Bug here: created an sole reference
 tag2Warning.set('test', "This test operation may have data leakage.");
 // Tags:
-tag2Warning.set('test_overlap', "This operation may result in an overlap with training data. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
-tag2Warning.set('train_overlap', "This operation may result in an overlap with test data. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
+tag2Warning.set('test_overlap', "This operation may result in an overlap of training and test data. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
+tag2Warning.set('train_overlap', "This operation may result in an overlap of training and test data. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
 //tag2Warning.set('test_multiuse', "This test dataset may be used multiple times, which can no longer be considered as unseen. See: <a href='https://www.cs.cmu.edu/~ckaestne/pdf/ase22.pdf' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");  // TODO: lead to multi-warnings
 tag2Warning.set('preprocessing_leak', "This operation may cause a preprocessing leakage. See: <a href='https://scikit-learn.org/stable/common_pitfalls.html#data-leakage-during-pre-processing' target='_blank' rel='noopener noreferrer' style='text-decoration: underline'>Details</a>");
 
@@ -225,8 +226,22 @@ const highlight = (notebookTracker: INotebookTracker, highlightMap: any) => {
   }
 }
 
-const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker) => {
+let statusText: string = "Leakage analysis finished";
+let statusBarItem: any = null;
+
+const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker, statusBar: any) => {
   // POST request
+  statusText = "Analyzing data leakage...";
+  if (statusBarItem) {
+    statusBarItem.dispose();
+  }
+  const statusWidget = new Widget();
+  statusWidget.node.textContent = statusText;
+  statusBarItem = statusBar.registerStatusItem('detection-status', {
+    align: 'middle',
+    item: statusWidget,
+  })
+
   const dataToSend = { name: filename };
   muteAll();
   try {
@@ -240,6 +255,14 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookT
       // create highlightMap
 
       highlight(notebookTracker, reply.report);
+      statusText = "Leakage analysis finished";
+      statusBarItem.dispose();
+      const statusWidget = new Widget();
+      statusWidget.node.textContent = statusText;
+      statusBarItem = statusBar.registerStatusItem('detection-status', {
+        align: 'middle',
+        item: statusWidget,
+      })
     }
     // TODO: if not ok
   } catch (reason) {
@@ -247,6 +270,14 @@ const detect = async (filename: string, shell: JupyterFrontEnd.IShell, notebookT
       `Error on POST /data-leakage-detection/detect ${dataToSend}.\n${reason}`
     );
     // TODO: if error
+    statusText = "Error during analysis!";
+    statusBarItem.dispose();
+    const statusWidget = new Widget();
+    statusWidget.node.textContent = statusText;
+    statusBarItem = statusBar.registerStatusItem('detection-status', {
+      align: 'middle',
+      item: statusWidget,
+    })
   }
 }
 
@@ -255,9 +286,11 @@ class AnalyzeMenuButton implements DocumentRegistry.IWidgetExtension<NotebookPan
 {
   shell: JupyterFrontEnd.IShell
   notebookTracker: INotebookTracker
-  constructor(shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker) {
+  statusBar: any
+  constructor(shell: JupyterFrontEnd.IShell, notebookTracker: INotebookTracker, statusBar: any) {
     this.shell = shell;
     this.notebookTracker = notebookTracker;
+    this.statusBar = statusBar;
   }
   
   /**
@@ -272,7 +305,7 @@ class AnalyzeMenuButton implements DocumentRegistry.IWidgetExtension<NotebookPan
     context: DocumentRegistry.IContext<INotebookModel>
   ): IDisposable {
     const createReport = () => {
-      detect(context.path, this.shell, this.notebookTracker);
+      detect(context.path, this.shell, this.notebookTracker, this.statusBar);
     };
     const button = new ToolbarButton({
       className: 'create-report-button',
@@ -325,12 +358,14 @@ const plugin: JupyterFrontEndPlugin<void> = {
   requires: [
     ICommandPalette,
     INotebookTracker,
+    IStatusBar
     //IEditorTracker,
   ],
   activate: async (
     app: JupyterFrontEnd,
     palette: ICommandPalette,
     notebookTracker: INotebookTracker,
+    statusBar: IStatusBar,
   ) => {
     console.log('JupyterLab extension data-leakage-detection is activated!');
 
@@ -349,13 +384,13 @@ const plugin: JupyterFrontEndPlugin<void> = {
     commands.addCommand(command, {
       label: 'Leakage Detection',
       caption: 'Leakage Detection',
-      execute: (() => detect(current_file, shell, notebookTracker)) as unknown as CommandRegistry.CommandFunc<Promise<any>>  // TODO: why
+      execute: (() => detect(current_file, shell, notebookTracker, statusBar)) as unknown as CommandRegistry.CommandFunc<Promise<any>>  // TODO: why
     });
     //commands.addKeyBinding()
 
     palette.addItem({ command, category: category });
 
-    app.docRegistry.addWidgetExtension('Notebook', new AnalyzeMenuButton(shell, notebookTracker));
+    app.docRegistry.addWidgetExtension('Notebook', new AnalyzeMenuButton(shell, notebookTracker, statusBar));
     app.docRegistry.addWidgetExtension('Notebook', new MuteMenuButton());
   },
 };
